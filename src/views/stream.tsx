@@ -12,6 +12,7 @@ export function StreamView() {
     query,
     categoryFilter,
     domainFilter,
+    collectionFilter,
     authorFilter,
     afterFilter,
     beforeFilter,
@@ -22,6 +23,7 @@ export function StreamView() {
     error,
     categories,
     domains,
+    collections,
     isLoadingRef,
     loadMore,
     updateFilters,
@@ -36,7 +38,7 @@ export function StreamView() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const advancedFilterCount = [categoryFilter, domainFilter, authorFilter, afterFilter, beforeFilter].filter(Boolean).length;
+  const advancedFilterCount = [categoryFilter, domainFilter, collectionFilter, authorFilter, afterFilter, beforeFilter].filter(Boolean).length;
 
   useEffect(() => {
     if (advancedFilterCount > 0) setFiltersOpen(true);
@@ -122,7 +124,7 @@ export function StreamView() {
   };
 
   const hasActiveFilters =
-    query || categoryFilter || domainFilter || authorFilter || afterFilter || beforeFilter;
+    query || categoryFilter || domainFilter || collectionFilter || authorFilter || afterFilter || beforeFilter;
 
   const sentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -237,6 +239,26 @@ export function StreamView() {
                   {domains.map((dom) => (
                     <option key={dom.name} value={dom.name}>
                       {dom.name} ({dom.count})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Collection Dropdown */}
+              <div className="flex flex-col gap-1">
+                <label htmlFor="collection-filter" className="text-xs text-muted">
+                  Collection
+                </label>
+                <select
+                  id="collection-filter"
+                  value={collectionFilter}
+                  onChange={(e) => updateFilters({ collection: e.target.value })}
+                  className="min-h-[44px] rounded-button border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="">All collections</option>
+                  {collections.map((c) => (
+                    <option key={c.slug} value={c.slug}>
+                      {c.name} ({c.bookmark_count})
                     </option>
                   ))}
                 </select>

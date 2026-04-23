@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { fetchSearch, fetchCategories, fetchDomains } from "@/lib/api";
-import type { Bookmark, CategoryCount, DomainCount } from "@/lib/types";
+import { fetchSearch, fetchCategories, fetchDomains, fetchCollections } from "@/lib/api";
+import type { Bookmark, CategoryCount, Collection, DomainCount } from "@/lib/types";
 
 const PAGE_SIZE = 20;
 
@@ -10,6 +10,7 @@ interface UseStreamSearchReturn {
   query: string;
   categoryFilter: string;
   domainFilter: string;
+  collectionFilter: string;
   authorFilter: string;
   afterFilter: string;
   beforeFilter: string;
@@ -24,6 +25,7 @@ interface UseStreamSearchReturn {
   // Dropdown data
   categories: CategoryCount[];
   domains: DomainCount[];
+  collections: Collection[];
 
   // Refs
   offsetRef: React.RefObject<number>;
@@ -41,6 +43,7 @@ interface UseStreamSearchReturn {
     q: string | undefined;
     category: string | undefined;
     domain: string | undefined;
+    collection: string | undefined;
     author: string | undefined;
     after: string | undefined;
     before: string | undefined;
@@ -56,6 +59,7 @@ export function useStreamSearch(): UseStreamSearchReturn {
   const query = searchParams.get("q") || "";
   const categoryFilter = searchParams.get("category") || "";
   const domainFilter = searchParams.get("domain") || "";
+  const collectionFilter = searchParams.get("collection") || "";
   const authorFilter = searchParams.get("author") || "";
   const afterFilter = searchParams.get("after") || "";
   const beforeFilter = searchParams.get("before") || "";
@@ -70,6 +74,7 @@ export function useStreamSearch(): UseStreamSearchReturn {
   // Dropdown data
   const [categories, setCategories] = useState<CategoryCount[]>([]);
   const [domains, setDomains] = useState<DomainCount[]>([]);
+  const [collections, setCollections] = useState<Collection[]>([]);
 
   // Refs
   const offsetRef = useRef(0);
@@ -77,7 +82,7 @@ export function useStreamSearch(): UseStreamSearchReturn {
   const loadMoreControllerRef = useRef<AbortController | null>(null);
   const retryControllerRef = useRef<AbortController | null>(null);
 
-  // Load categories and domains for filter dropdowns
+  // Load categories, domains and collections for filter dropdowns
   useEffect(() => {
     void fetchCategories()
       .then(setCategories)
@@ -89,6 +94,11 @@ export function useStreamSearch(): UseStreamSearchReturn {
       .catch((err) => {
         console.warn("Failed to load domains for filter dropdown:", err);
       });
+    void fetchCollections()
+      .then(setCollections)
+      .catch((err) => {
+        console.warn("Failed to load collections for filter dropdown:", err);
+      });
   }, []);
 
   // Build search params from current filters
@@ -97,13 +107,14 @@ export function useStreamSearch(): UseStreamSearchReturn {
       q: query || undefined,
       category: categoryFilter || undefined,
       domain: domainFilter || undefined,
+      collection: collectionFilter || undefined,
       author: authorFilter || undefined,
       after: afterFilter || undefined,
       before: beforeFilter || undefined,
       limit: PAGE_SIZE,
       offset,
     }),
-    [query, categoryFilter, domainFilter, authorFilter, afterFilter, beforeFilter],
+    [query, categoryFilter, domainFilter, collectionFilter, authorFilter, afterFilter, beforeFilter],
   );
 
   // Load initial results when filters change
@@ -233,6 +244,7 @@ export function useStreamSearch(): UseStreamSearchReturn {
     query,
     categoryFilter,
     domainFilter,
+    collectionFilter,
     authorFilter,
     afterFilter,
     beforeFilter,
@@ -243,6 +255,7 @@ export function useStreamSearch(): UseStreamSearchReturn {
     error,
     categories,
     domains,
+    collections,
     offsetRef,
     isLoadingRef,
     loadMore,

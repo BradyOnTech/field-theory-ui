@@ -10,6 +10,7 @@ const VIEW_ROUTES: Record<string, string> = {
   "5": "/chronos",
   "6": "/forge",
   "7": "/mirror",
+  "8": "/collections",
 };
 
 function isModalOpen(): boolean {
@@ -34,6 +35,7 @@ const TOP_LEVEL_ROUTES = new Set([
   "/chronos",
   "/forge",
   "/mirror",
+  "/collections",
 ]);
 
 function isDetailRoute(pathname: string): boolean {
@@ -109,8 +111,8 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Number keys 1-7 switch views (not when modal is open)
-      if (key >= "1" && key <= "7") {
+      // Number keys 1-8 switch views (not when modal is open)
+      if (key >= "1" && key <= "8") {
         if (isModalOpen()) return;
         const route = VIEW_ROUTES[key];
         if (route) {

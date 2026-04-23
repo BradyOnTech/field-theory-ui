@@ -8,6 +8,7 @@ import {
   Clock,
   Hammer,
   ScanEye,
+  FolderOpen,
   Github,
   Keyboard,
   RefreshCw,
@@ -34,6 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/chronos", label: "Chronos", icon: Clock, shortcut: "5" },
   { to: "/forge", label: "Forge", icon: Hammer, shortcut: "6" },
   { to: "/mirror", label: "Mirror", icon: ScanEye, shortcut: "7" },
+  { to: "/collections", label: "Collections", icon: FolderOpen, shortcut: "8" },
 ];
 
 export function Layout() {

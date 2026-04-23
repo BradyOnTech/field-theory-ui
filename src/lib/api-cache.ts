@@ -33,3 +33,10 @@ export function setCache(key: string, data: unknown): void {
 export function clearCache(): void {
   cache.clear();
 }
+
+/** Drop any cached entry whose key contains the given substring. */
+export function invalidateByPrefix(substring: string): void {
+  for (const key of cache.keys()) {
+    if (key.includes(substring)) cache.delete(key);
+  }
+}

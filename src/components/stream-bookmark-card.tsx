@@ -1,9 +1,12 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Heart, Repeat2, Bookmark, Image, ExternalLink, X } from "lucide-react";
-import type { Bookmark as BookmarkType, QuotedTweetSnapshot } from "@/lib/types";
+import { Heart, Repeat2, Bookmark, Image, ExternalLink, X, FolderPlus } from "lucide-react";
+import type { Bookmark as BookmarkType, CollectionMembership, QuotedTweetSnapshot } from "@/lib/types";
 import { parseTwitterDate, timeAgo, formatNumber, tweetUrl } from "@/lib/utils";
 import { formatTweetText } from "@/lib/tweet-text";
 import { AvatarImage } from "@/components/avatar-image";
+import { CollectionPicker } from "@/components/collection-picker";
+import { fetchBookmark } from "@/lib/api";
 
 interface LinkItem {
   url: string;
@@ -71,6 +74,31 @@ export function BookmarkCard({
   expandedRef?: React.RefObject<HTMLDivElement | null>;
   onToggle: () => void;
 }) {
+  const [memberships, setMemberships] = useState<CollectionMembership[]>(
+    bookmark.collections ?? [],
+  );
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const bookmarkIdStr = String(bookmark.id);
+
+  // Lazy-load memberships the first time the card is expanded. Cached by api-cache
+  // so repeat expansions don't refetch.
+  useEffect(() => {
+    if (!isExpanded) return;
+    if (bookmark.collections) return;
+    let cancelled = false;
+    void fetchBookmark(bookmarkIdStr)
+      .then((detail) => {
+        if (cancelled) return;
+        if (detail.collections) setMemberships(detail.collections);
+      })
+      .catch(() => {
+        /* non-fatal; picker still works */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isExpanded, bookmark.collections, bookmarkIdStr]);
+
   const date = parseTwitterDate(bookmark.posted_at);
   const relativeTime = date ? timeAgo(date) : "";
   const formattedDate = date
@@ -230,19 +258,52 @@ export function BookmarkCard({
 
           </div>
 
-          {/* Expanded section: Open in X link */}
+          {/* Expanded section: Collections + Open in X */}
           {isExpanded && (
-            <div className="mt-3 flex items-center gap-3 border-t border-border pt-3">
-              <a
-                href={openInXUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex min-h-[44px] items-center gap-1.5 rounded-button border border-border px-3 py-2 text-sm text-foreground hover:bg-surface active:bg-[#252528] transition-colors"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <X className="h-4 w-4" />
-                Open in X
-              </a>
+            <div className="mt-3 border-t border-border pt-3" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted">Collections</span>
+                {memberships.map((m) => (
+                  <Link
+                    key={m.slug}
+                    to={`/collections/${encodeURIComponent(m.slug)}`}
+                    className="rounded-badge border border-border px-2 py-0.5 text-xs text-foreground transition-colors hover:border-[#444]"
+                    style={m.color ? { backgroundColor: `${m.color}22`, borderColor: `${m.color}55` } : undefined}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {m.name}
+                  </Link>
+                ))}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsPickerOpen((o) => !o)}
+                    className="flex items-center gap-1 rounded-badge border border-dashed border-border px-2 py-0.5 text-xs text-muted transition-colors hover:border-[#444] hover:text-foreground"
+                  >
+                    <FolderPlus className="h-3 w-3" />
+                    {memberships.length === 0 ? "Add to collection" : "Edit"}
+                  </button>
+                  {isPickerOpen && (
+                    <CollectionPicker
+                      bookmarkId={bookmarkIdStr}
+                      initialMemberships={memberships}
+                      onClose={() => setIsPickerOpen(false)}
+                      onMembershipsChange={setMemberships}
+                    />
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <a
+                  href={openInXUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex min-h-[44px] items-center gap-1.5 rounded-button border border-border px-3 py-2 text-sm text-foreground hover:bg-surface active:bg-[#252528] transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                  Open in X
+                </a>
+              </div>
             </div>
           )}
         </div>

@@ -16,8 +16,10 @@ import type {
   MonthlyBreakdownEntry,
   TechniqueGroup,
   GitHubMetadataMap,
+  Collection,
+  CollectionDetail,
 } from "./types";
-import { getCached, setCache } from "./api-cache";
+import { getCached, setCache, invalidateByPrefix } from "./api-cache";
 
 const API_BASE = "/api";
 
@@ -74,6 +76,7 @@ export function fetchSearch(params: SearchParams, signal?: AbortSignal): Promise
   if (params.author) searchParams.set("author", params.author);
   if (params.category) searchParams.set("category", params.category);
   if (params.domain) searchParams.set("domain", params.domain);
+  if (params.collection) searchParams.set("collection", params.collection);
   if (params.after) searchParams.set("after", params.after);
   if (params.before) searchParams.set("before", params.before);
   if (params.limit !== undefined) searchParams.set("limit", String(params.limit));
@@ -83,6 +86,10 @@ export function fetchSearch(params: SearchParams, signal?: AbortSignal): Promise
 
 export function fetchAuthor(handle: string): Promise<AuthorProfile> {
   return fetchJSON<AuthorProfile>(`${API_BASE}/author/${encodeURIComponent(handle)}`);
+}
+
+export function fetchBookmark(id: string): Promise<Bookmark> {
+  return fetchJSON<Bookmark>(`${API_BASE}/bookmark/${encodeURIComponent(id)}`);
 }
 
 export function fetchGithubRepos(): Promise<GithubRepo[]> {
@@ -200,4 +207,76 @@ export function fetchOracleStream(
     });
 
   return { close: () => controller.abort() };
+}
+
+// --- Collections ---
+
+async function writeJSON<T>(url: string, method: "POST" | "PATCH" | "DELETE", body?: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method,
+    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+    throw new Error((error as { error: string }).error || `HTTP ${response.status}`);
+  }
+  // Invalidate cached collection/search/bookmark reads after any write
+  invalidateByPrefix("/api/collections");
+  invalidateByPrefix("/api/search");
+  invalidateByPrefix("/api/bookmark/");
+  return response.json() as Promise<T>;
+}
+
+export function fetchCollections(): Promise<Collection[]> {
+  return fetchJSON<Collection[]>(`${API_BASE}/collections`);
+}
+
+export function fetchCollection(slug: string, limit = 50, offset = 0): Promise<CollectionDetail> {
+  const qs = new URLSearchParams();
+  qs.set("limit", String(limit));
+  qs.set("offset", String(offset));
+  return fetchJSON<CollectionDetail>(`${API_BASE}/collections/${encodeURIComponent(slug)}?${qs.toString()}`);
+}
+
+export function createCollection(input: {
+  name: string;
+  description?: string;
+  color?: string;
+}): Promise<Collection> {
+  return writeJSON<Collection>(`${API_BASE}/collections`, "POST", input);
+}
+
+export function updateCollection(
+  slug: string,
+  updates: { name?: string; description?: string; color?: string },
+): Promise<Collection> {
+  return writeJSON<Collection>(`${API_BASE}/collections/${encodeURIComponent(slug)}`, "PATCH", updates);
+}
+
+export function deleteCollection(slug: string): Promise<{ deleted: true }> {
+  return writeJSON<{ deleted: true }>(`${API_BASE}/collections/${encodeURIComponent(slug)}`, "DELETE");
+}
+
+export function addBookmarksToCollection(
+  slug: string,
+  bookmarkIds: string[],
+  addedBy: "user" | "mcp" | "rule" = "user",
+): Promise<{ added: number; skipped: number }> {
+  return writeJSON<{ added: number; skipped: number }>(
+    `${API_BASE}/collections/${encodeURIComponent(slug)}/bookmarks`,
+    "POST",
+    { bookmark_ids: bookmarkIds, added_by: addedBy },
+  );
+}
+
+export function removeBookmarksFromCollection(
+  slug: string,
+  bookmarkIds: string[],
+): Promise<{ removed: number }> {
+  return writeJSON<{ removed: number }>(
+    `${API_BASE}/collections/${encodeURIComponent(slug)}/bookmarks`,
+    "DELETE",
+    { bookmark_ids: bookmarkIds },
+  );
 }

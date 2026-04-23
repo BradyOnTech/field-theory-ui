@@ -30,6 +30,30 @@ export interface Bookmark {
   quoted_tweet_json: string;
   tags_json: string;
   ingested_via: string;
+  // Only populated by /api/bookmark/:id (detail). Absent on list responses.
+  collections?: CollectionMembership[];
+}
+
+export interface Collection {
+  id: number;
+  slug: string;
+  name: string;
+  description: string;
+  color: string;
+  created_at: string;
+  updated_at: string;
+  bookmark_count: number;
+}
+
+export interface CollectionMembership {
+  slug: string;
+  name: string;
+  color: string;
+}
+
+export interface CollectionDetail extends Collection {
+  bookmarks: Bookmark[];
+  total: number;
 }
 
 export interface QuotedTweetSnapshot {
@@ -83,6 +107,7 @@ export interface SearchParams {
   author?: string;
   category?: string;
   domain?: string;
+  collection?: string;
   after?: string;
   before?: string;
   limit?: number;

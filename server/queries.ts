@@ -144,6 +144,64 @@ export function getDb(): Database.Database {
   return database;
 }
 
+// --- Writable DB handle (for Collections) ---
+//
+// Collections are a UI-owned concept that don't exist in the ft-synced schema.
+// We keep a single cached read-write connection scoped to Collections tables.
+// Readonly getDb() connections see the new tables too (same file), but are
+// never mutated. ft sync only touches the bookmarks table, not ours.
+
+let writableDb: Database.Database | null = null;
+
+export function getWritableDb(): Database.Database {
+  if (writableDb) return writableDb;
+
+  const database = new Database(dbPath, { fileMustExist: true });
+  ensureCollectionsSchema(database);
+
+  database.function("parse_twitter_date_ymd", (dateStr: unknown) => {
+    if (typeof dateStr !== "string") return null;
+    return parseTwitterDateToYMD(dateStr);
+  });
+
+  database.function("parse_twitter_date_iso", (dateStr: unknown) => {
+    if (typeof dateStr !== "string") return null;
+    return parseTwitterDateToISO(dateStr);
+  });
+
+  writableDb = database;
+  return writableDb;
+}
+
+function ensureCollectionsSchema(database: Database.Database): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS collections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      description TEXT,
+      color TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_collections_slug ON collections(slug);
+
+    CREATE TABLE IF NOT EXISTS bookmark_collections (
+      bookmark_id TEXT NOT NULL,
+      collection_id INTEGER NOT NULL,
+      added_at TEXT NOT NULL,
+      added_by TEXT NOT NULL DEFAULT 'user',
+      note TEXT,
+      PRIMARY KEY (bookmark_id, collection_id),
+      FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_bookmark_collections_bookmark
+      ON bookmark_collections(bookmark_id);
+    CREATE INDEX IF NOT EXISTS idx_bookmark_collections_collection
+      ON bookmark_collections(collection_id);
+  `);
+}
+
 /**
  * Validate that the bookmarks database has the expected schema.
  * Checks required columns in the bookmarks table and verifies
@@ -523,6 +581,7 @@ interface SearchFilters {
   author?: string;
   category?: string;
   domain?: string;
+  collection?: string; // collection slug
   after?: string;
   before?: string;
   limit?: number;
@@ -563,10 +622,10 @@ function normalizeBeforeDate(before: string): { value: string; useStrictLessThan
  * @returns Object with conditions array and corresponding parameter values
  */
 function buildSearchFilters(
-  filters: Pick<SearchFilters, "author" | "category" | "domain" | "after" | "before">,
+  filters: Pick<SearchFilters, "author" | "category" | "domain" | "collection" | "after" | "before">,
   tablePrefix = "",
 ): { conditions: string[]; values: (string | number)[] } {
-  const { author, category, domain, after, before } = filters;
+  const { author, category, domain, collection, after, before } = filters;
   const p = tablePrefix;
   const conditions: string[] = [];
   const values: (string | number)[] = [];
@@ -582,6 +641,15 @@ function buildSearchFilters(
   if (domain) {
     conditions.push(`(',' || ${p}domains || ',') LIKE '%,' || ? || ',%'`);
     values.push(domain);
+  }
+  if (collection) {
+    // Subquery against bookmark_collections; slug is user-supplied so bind safely.
+    conditions.push(
+      `${p}id IN (SELECT bc.bookmark_id FROM bookmark_collections bc
+                   JOIN collections c ON c.id = bc.collection_id
+                   WHERE c.slug = ?)`,
+    );
+    values.push(collection);
   }
   if (after) {
     conditions.push(`parse_twitter_date_iso(${p}posted_at) >= ?`);
@@ -1435,4 +1503,279 @@ export function getBookmarksByConversation(conversationId: string): BookmarkResu
     .all(conversationId) as RawRow[];
 
   return rows.map(mapBookmarkRow);
+}
+
+// --- Collections ---
+
+export interface CollectionSummary {
+  id: number;
+  slug: string;
+  name: string;
+  description: string;
+  color: string;
+  created_at: string;
+  updated_at: string;
+  bookmark_count: number;
+}
+
+export interface CollectionMembership {
+  slug: string;
+  name: string;
+  color: string;
+}
+
+function slugify(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+
+function uniqueSlug(database: Database.Database, base: string): string {
+  let slug = base || "collection";
+  const stmt = database.prepare("SELECT 1 FROM collections WHERE slug = ?");
+  if (!stmt.get(slug)) return slug;
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${base}-${i}`;
+    if (!stmt.get(candidate)) return candidate;
+  }
+  throw new Error("Could not generate a unique collection slug");
+}
+
+export function listCollections(): CollectionSummary[] {
+  const database = getWritableDb();
+  const rows = database
+    .prepare(
+      `SELECT c.id, c.slug, c.name, c.description, c.color,
+              c.created_at, c.updated_at,
+              COUNT(bc.bookmark_id) as bookmark_count
+       FROM collections c
+       LEFT JOIN bookmark_collections bc ON bc.collection_id = c.id
+       GROUP BY c.id
+       ORDER BY bookmark_count DESC, LOWER(c.name) ASC`,
+    )
+    .all() as RawRow[];
+
+  return rows.map((r) => ({
+    id: r.id as number,
+    slug: r.slug as string,
+    name: r.name as string,
+    description: (r.description as string) || "",
+    color: (r.color as string) || "",
+    created_at: r.created_at as string,
+    updated_at: r.updated_at as string,
+    bookmark_count: (r.bookmark_count as number) || 0,
+  }));
+}
+
+export function getCollectionBySlug(slug: string): CollectionSummary | null {
+  const database = getWritableDb();
+  const row = database
+    .prepare(
+      `SELECT c.id, c.slug, c.name, c.description, c.color,
+              c.created_at, c.updated_at,
+              (SELECT COUNT(*) FROM bookmark_collections
+                 WHERE collection_id = c.id) as bookmark_count
+       FROM collections c
+       WHERE c.slug = ?`,
+    )
+    .get(slug) as RawRow | undefined;
+
+  if (!row) return null;
+  return {
+    id: row.id as number,
+    slug: row.slug as string,
+    name: row.name as string,
+    description: (row.description as string) || "",
+    color: (row.color as string) || "",
+    created_at: row.created_at as string,
+    updated_at: row.updated_at as string,
+    bookmark_count: (row.bookmark_count as number) || 0,
+  };
+}
+
+export function createCollection(input: {
+  name: string;
+  description?: string;
+  color?: string;
+  slug?: string;
+}): CollectionSummary {
+  const name = input.name.trim();
+  if (!name) throw new Error("Collection name is required");
+
+  const database = getWritableDb();
+  const baseSlug = input.slug ? slugify(input.slug) : slugify(name);
+  const slug = uniqueSlug(database, baseSlug);
+  const now = new Date().toISOString();
+
+  database
+    .prepare(
+      `INSERT INTO collections (slug, name, description, color, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(slug, name, input.description || null, input.color || null, now, now);
+
+  const created = getCollectionBySlug(slug);
+  if (!created) throw new Error("Failed to create collection");
+  return created;
+}
+
+export function updateCollection(
+  slug: string,
+  updates: { name?: string; description?: string; color?: string },
+): CollectionSummary | null {
+  const database = getWritableDb();
+  const existing = getCollectionBySlug(slug);
+  if (!existing) return null;
+
+  const fields: string[] = [];
+  const values: (string | null)[] = [];
+
+  if (updates.name !== undefined) {
+    const name = updates.name.trim();
+    if (!name) throw new Error("Collection name cannot be empty");
+    fields.push("name = ?");
+    values.push(name);
+  }
+  if (updates.description !== undefined) {
+    fields.push("description = ?");
+    values.push(updates.description || null);
+  }
+  if (updates.color !== undefined) {
+    fields.push("color = ?");
+    values.push(updates.color || null);
+  }
+  if (fields.length === 0) return existing;
+
+  fields.push("updated_at = ?");
+  values.push(new Date().toISOString());
+  values.push(slug);
+
+  database
+    .prepare(`UPDATE collections SET ${fields.join(", ")} WHERE slug = ?`)
+    .run(...values);
+
+  return getCollectionBySlug(slug);
+}
+
+export function deleteCollection(slug: string): boolean {
+  const database = getWritableDb();
+  const existing = getCollectionBySlug(slug);
+  if (!existing) return false;
+
+  // Manually cascade to bookmark_collections since FK enforcement requires
+  // PRAGMA foreign_keys = ON per connection, which we don't rely on.
+  const tx = database.transaction(() => {
+    database
+      .prepare("DELETE FROM bookmark_collections WHERE collection_id = ?")
+      .run(existing.id);
+    database.prepare("DELETE FROM collections WHERE id = ?").run(existing.id);
+  });
+  tx();
+  return true;
+}
+
+export function addBookmarksToCollection(
+  slug: string,
+  bookmarkIds: string[],
+  addedBy: "user" | "mcp" | "rule" = "user",
+): { added: number; skipped: number } {
+  if (bookmarkIds.length === 0) return { added: 0, skipped: 0 };
+
+  const database = getWritableDb();
+  const collection = getCollectionBySlug(slug);
+  if (!collection) throw new Error(`Collection not found: ${slug}`);
+
+  const now = new Date().toISOString();
+  const stmt = database.prepare(
+    `INSERT OR IGNORE INTO bookmark_collections
+       (bookmark_id, collection_id, added_at, added_by)
+     VALUES (?, ?, ?, ?)`,
+  );
+
+  let added = 0;
+  let skipped = 0;
+  const tx = database.transaction(() => {
+    for (const id of bookmarkIds) {
+      const result = stmt.run(id, collection.id, now, addedBy);
+      if (result.changes > 0) added++;
+      else skipped++;
+    }
+    // Touch updated_at on the collection so recency sorts reflect activity.
+    database
+      .prepare("UPDATE collections SET updated_at = ? WHERE id = ?")
+      .run(now, collection.id);
+  });
+  tx();
+
+  return { added, skipped };
+}
+
+export function removeBookmarksFromCollection(
+  slug: string,
+  bookmarkIds: string[],
+): { removed: number } {
+  if (bookmarkIds.length === 0) return { removed: 0 };
+
+  const database = getWritableDb();
+  const collection = getCollectionBySlug(slug);
+  if (!collection) throw new Error(`Collection not found: ${slug}`);
+
+  const placeholders = bookmarkIds.map(() => "?").join(",");
+  const result = database
+    .prepare(
+      `DELETE FROM bookmark_collections
+       WHERE collection_id = ? AND bookmark_id IN (${placeholders})`,
+    )
+    .run(collection.id, ...bookmarkIds);
+
+  return { removed: result.changes };
+}
+
+export function getBookmarksByCollection(
+  slug: string,
+  limit = 50,
+  offset = 0,
+): { results: BookmarkResult[]; total: number } | null {
+  const database = getWritableDb();
+  const collection = getCollectionBySlug(slug);
+  if (!collection) return null;
+
+  const safeLimit = Math.min(Math.max(1, limit), 200);
+  const safeOffset = Math.max(0, offset);
+
+  const total = collection.bookmark_count;
+  const rows = database
+    .prepare(
+      `SELECT b.*
+       FROM bookmark_collections bc
+       JOIN bookmarks b ON b.id = bc.bookmark_id
+       WHERE bc.collection_id = ?
+       ORDER BY bc.added_at DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(collection.id, safeLimit, safeOffset) as RawRow[];
+
+  return { results: rows.map(mapBookmarkRow), total };
+}
+
+export function getCollectionsForBookmark(bookmarkId: string): CollectionMembership[] {
+  const database = getWritableDb();
+  const rows = database
+    .prepare(
+      `SELECT c.slug, c.name, c.color
+       FROM bookmark_collections bc
+       JOIN collections c ON c.id = bc.collection_id
+       WHERE bc.bookmark_id = ?
+       ORDER BY LOWER(c.name) ASC`,
+    )
+    .all(bookmarkId) as RawRow[];
+
+  return rows.map((r) => ({
+    slug: r.slug as string,
+    name: r.name as string,
+    color: (r.color as string) || "",
+  }));
 }

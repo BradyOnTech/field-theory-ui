@@ -7,6 +7,7 @@ import path from "path";
 import os from "os";
 import {
   getDb,
+  getWritableDb,
   getStats,
   getRecent,
   getCategories,
@@ -24,6 +25,15 @@ import {
   getGitHubMetadata,
   getConversationGroups,
   getBookmarksByConversation,
+  listCollections,
+  getCollectionBySlug,
+  createCollection,
+  updateCollection,
+  deleteCollection,
+  addBookmarksToCollection,
+  removeBookmarksFromCollection,
+  getBookmarksByCollection,
+  getCollectionsForBookmark,
 } from "./queries";
 import { handleOracleQuery, type OracleContext } from "./oracle";
 import { handleOracleProQueryStream, isProModeAvailable, isWebSearchAvailable } from "./oracle-pro";
@@ -145,6 +155,33 @@ function parseQueryParams(urlStr: string): URLSearchParams {
   const qIndex = urlStr.indexOf("?");
   if (qIndex === -1) return new URLSearchParams();
   return new URLSearchParams(urlStr.slice(qIndex + 1));
+}
+
+// Read a JSON body from a request. Rejects on non-JSON or bodies > 1 MB.
+function readJsonBody<T = unknown>(req: IncomingMessage, maxBytes = 1_000_000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let bytes = 0;
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        reject(new Error("Request body too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      const raw = Buffer.concat(chunks).toString("utf8");
+      if (!raw.trim()) return resolve({} as T);
+      try {
+        resolve(JSON.parse(raw) as T);
+      } catch {
+        reject(new Error("Invalid JSON body"));
+      }
+    });
+    req.on("error", reject);
+  });
 }
 
 function getPathname(urlStr: string): string {
@@ -270,6 +307,151 @@ export function handleRequest(req: IncomingMessage, res: ServerResponse): void {
     return;
   }
 
+  // --- Collections routes (mixed GET/POST/PATCH/DELETE; handled before switch) ---
+  if (pathname === "/api/collections") {
+    if (req.method === "GET") {
+      try {
+        sendJSON(res, listCollections());
+      } catch (err) {
+        console.error("listCollections error:", err);
+        sendError(res, "Failed to list collections", 500);
+      }
+      return;
+    }
+    if (req.method === "POST") {
+      readJsonBody<{ name?: string; description?: string; color?: string; slug?: string }>(req)
+        .then((body) => {
+          const name = (body.name || "").trim();
+          if (!name) {
+            sendError(res, "name is required", 400);
+            return;
+          }
+          try {
+            const created = createCollection({
+              name,
+              description: body.description,
+              color: body.color,
+              slug: body.slug,
+            });
+            sendJSON(res, created, 201);
+          } catch (err) {
+            console.error("createCollection error:", err);
+            sendError(res, (err as Error).message || "Failed to create collection", 400);
+          }
+        })
+        .catch((err: Error) => sendError(res, err.message, 400));
+      return;
+    }
+    sendError(res, "Method not allowed", 405);
+    return;
+  }
+
+  if (pathname.startsWith("/api/collections/")) {
+    const rest = pathname.slice("/api/collections/".length);
+    const [rawSlug, subpath] = rest.split("/", 2);
+    const slug = decodeURIComponent(rawSlug || "");
+    if (!slug) {
+      sendError(res, "Collection slug is required", 400);
+      return;
+    }
+
+    // /api/collections/:slug/bookmarks  (POST to add, DELETE to remove)
+    if (subpath === "bookmarks") {
+      if (req.method !== "POST" && req.method !== "DELETE") {
+        sendError(res, "Method not allowed", 405);
+        return;
+      }
+      readJsonBody<{ bookmark_ids?: unknown; added_by?: string }>(req)
+        .then((body) => {
+          const ids = Array.isArray(body.bookmark_ids)
+            ? body.bookmark_ids.filter((x): x is string => typeof x === "string" && x.length > 0)
+            : [];
+          if (ids.length === 0) {
+            sendError(res, "bookmark_ids (non-empty string array) is required", 400);
+            return;
+          }
+          try {
+            if (req.method === "POST") {
+              const addedBy = body.added_by === "mcp" || body.added_by === "rule" ? body.added_by : "user";
+              const result = addBookmarksToCollection(slug, ids, addedBy);
+              sendJSON(res, result);
+            } else {
+              const result = removeBookmarksFromCollection(slug, ids);
+              sendJSON(res, result);
+            }
+          } catch (err) {
+            const msg = (err as Error).message || "Failed";
+            if (msg.startsWith("Collection not found")) {
+              sendError(res, msg, 404);
+            } else {
+              console.error("collection bookmarks error:", err);
+              sendError(res, msg, 500);
+            }
+          }
+        })
+        .catch((err: Error) => sendError(res, err.message, 400));
+      return;
+    }
+
+    // /api/collections/:slug  (GET, PATCH, DELETE)
+    if (!subpath) {
+      if (req.method === "GET") {
+        const { value: limit } = parseNumericParam(params, "limit", 50);
+        const { value: offset } = parseNumericParam(params, "offset", 0);
+        try {
+          const summary = getCollectionBySlug(slug);
+          if (!summary) {
+            sendError(res, "Collection not found", 404);
+            return;
+          }
+          const bookmarks = getBookmarksByCollection(slug, limit, offset);
+          sendJSON(res, { ...summary, bookmarks: bookmarks?.results ?? [], total: bookmarks?.total ?? 0 });
+        } catch (err) {
+          console.error("getCollection error:", err);
+          sendError(res, "Failed to load collection", 500);
+        }
+        return;
+      }
+      if (req.method === "PATCH") {
+        readJsonBody<{ name?: string; description?: string; color?: string }>(req)
+          .then((body) => {
+            try {
+              const updated = updateCollection(slug, body);
+              if (!updated) {
+                sendError(res, "Collection not found", 404);
+                return;
+              }
+              sendJSON(res, updated);
+            } catch (err) {
+              console.error("updateCollection error:", err);
+              sendError(res, (err as Error).message || "Failed to update", 400);
+            }
+          })
+          .catch((err: Error) => sendError(res, err.message, 400));
+        return;
+      }
+      if (req.method === "DELETE") {
+        try {
+          const ok = deleteCollection(slug);
+          if (!ok) {
+            sendError(res, "Collection not found", 404);
+            return;
+          }
+          sendJSON(res, { deleted: true });
+        } catch (err) {
+          console.error("deleteCollection error:", err);
+          sendError(res, "Failed to delete", 500);
+        }
+        return;
+      }
+      sendError(res, "Method not allowed", 405);
+      return;
+    }
+
+    sendError(res, "Not found", 404);
+    return;
+  }
+
   // API routes
   if (pathname.startsWith("/api/")) {
     try {
@@ -326,6 +508,7 @@ export function handleRequest(req: IncomingMessage, res: ServerResponse): void {
           const author = params.get("author") || undefined;
           const category = params.get("category") || undefined;
           const domain = params.get("domain") || undefined;
+          const collection = params.get("collection") || undefined;
           const after = params.get("after") || undefined;
           const before = params.get("before") || undefined;
           const { value: limit, invalid: limitInvalid } = parseNumericParam(params, "limit", 20);
@@ -343,6 +526,7 @@ export function handleRequest(req: IncomingMessage, res: ServerResponse): void {
             author,
             category,
             domain,
+            collection,
             after,
             before,
             limit,
@@ -465,7 +649,8 @@ export function handleRequest(req: IncomingMessage, res: ServerResponse): void {
               sendError(res, "Bookmark not found", 404);
               return;
             }
-            sendJSON(res, bookmark);
+            const collections = getCollectionsForBookmark(id);
+            sendJSON(res, { ...bookmark, collections });
             return;
           }
           if (pathname.startsWith("/api/conversations/")) {
@@ -549,6 +734,9 @@ if (isMainModule) {
   // If the schema is invalid, exit immediately with a clear error.
   try {
     getDb();
+    // Also initialize writable handle so Collections tables exist before any read
+    // path filters on them. Migrations are idempotent (CREATE TABLE IF NOT EXISTS).
+    getWritableDb();
   } catch (e) {
     console.error((e as Error).message);
     process.exit(1);

@@ -7,6 +7,7 @@ import { OracleView } from "@/views/oracle";
 import { ChronosView } from "@/views/chronos";
 import { ForgeView } from "@/views/forge";
 import { MirrorView } from "@/views/mirror";
+import { CollectionsView } from "@/views/collections";
 
 
 export function App() {
@@ -21,6 +22,8 @@ export function App() {
         <Route path="/chronos" element={<ChronosView />} />
         <Route path="/forge" element={<ForgeView />} />
         <Route path="/mirror" element={<MirrorView />} />
+        <Route path="/collections" element={<CollectionsView />} />
+        <Route path="/collections/:slug" element={<CollectionsView />} />
 
       </Route>
     </Routes>
