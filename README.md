@@ -92,12 +92,57 @@ The input auto-expands up to 7 lines (Shift+Enter inserts a newline). The **Surp
 ```sh
 npm run dev              # Vite dev server with HMR
 npm run server           # API server only (port 3939)
+npm run mcp              # MCP stdio server (for Claude Desktop, Claude Code, etc.)
 npm run build            # Production build
 npm run typecheck        # tsc --noEmit
 npm run lint             # ESLint
 npm test                 # Vitest
 npm run generate:prompt  # Regenerate OpenUI component reference for Chat Pro
 ```
+
+## MCP Server
+
+Field Theory exposes your local bookmarks as an MCP server so external agents (Claude Desktop, Claude Code, Cursor, …) can search, read, and organise them into Collections. The server runs over stdio and reads/writes the same `~/.ft-bookmarks/bookmarks.db` that the UI uses.
+
+**Tools:**
+
+| Tool | Purpose |
+| ---- | ------- |
+| `search_bookmarks` | Full-text search, filter by author/category/domain/collection/date |
+| `get_bookmark` | Fetch one bookmark (with current collection memberships) |
+| `get_conversation` | All bookmarks in a reply thread |
+| `stats`, `list_categories`, `list_domains` | Overview + facet discovery |
+| `list_collections`, `create_collection`, `delete_collection` | Collection CRUD |
+| `add_to_collection`, `remove_from_collection` | Bulk membership edits (tagged `added_by="mcp"`) |
+| `get_bookmarks_by_collection` | Paginated list for one collection |
+
+**Claude Desktop config** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "field-theory": {
+      "command": "npx",
+      "args": ["tsx", "/ABSOLUTE/PATH/TO/field-theory-ui/server/mcp/index.ts"]
+    }
+  }
+}
+```
+
+**Claude Code config** (`~/.claude/config.json` or `.mcp.json` in the project):
+
+```json
+{
+  "mcpServers": {
+    "field-theory": {
+      "command": "npm",
+      "args": ["--prefix", "/ABSOLUTE/PATH/TO/field-theory-ui", "run", "mcp"]
+    }
+  }
+}
+```
+
+After configuring, ask your agent things like *"search my bookmarks for LangChain + web search tools"* or *"add the last 10 AI-news bookmarks to a collection called Weekly Digest"* and it'll call these tools directly.
 
 ## Environment Variables
 
