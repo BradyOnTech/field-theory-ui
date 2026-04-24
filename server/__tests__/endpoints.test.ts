@@ -379,6 +379,28 @@ describe("GET /api/search", () => {
     expect(combined.data.total).toBeGreaterThan(0);
   });
 
+  it("sorts FTS search results by likes when requested", async () => {
+    const { data } = await fetchJSON<{
+      results: Array<{ like_count: number }>;
+    }>("/api/search?q=AI&sort=likes_desc&limit=10");
+    expect(data.results.length).toBeGreaterThan(1);
+    for (let i = 0; i < data.results.length - 1; i++) {
+      expect(data.results[i]!.like_count).toBeGreaterThanOrEqual(data.results[i + 1]!.like_count);
+    }
+  });
+
+  it("maps legacy bookmark-date sort params to posted-date sorts", async () => {
+    const legacy = await fetchJSON<{
+      results: Array<{ id: string }>;
+    }>("/api/search?sort=bookmarked_asc&limit=10");
+    const canonical = await fetchJSON<{
+      results: Array<{ id: string }>;
+    }>("/api/search?sort=posted_asc&limit=10");
+    expect(legacy.data.results.map((result) => result.id)).toEqual(
+      canonical.data.results.map((result) => result.id),
+    );
+  });
+
   it("handles FTS5 special characters safely (C++)", async () => {
     const response = await fetch(`${baseUrl}/api/search?q=C%2B%2B`);
     expect(response.status).toBe(200);

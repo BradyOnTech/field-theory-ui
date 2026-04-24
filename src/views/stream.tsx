@@ -11,8 +11,6 @@ import type { SortKey } from "@/lib/types";
 const SORT_OPTIONS: { value: SortKey; label: string; needsQuery?: boolean }[] = [
   { value: "posted_desc", label: "Newest posted" },
   { value: "posted_asc", label: "Oldest posted" },
-  { value: "bookmarked_desc", label: "Recently bookmarked" },
-  { value: "bookmarked_asc", label: "First bookmarked" },
   { value: "likes_desc", label: "Most liked" },
   { value: "reposts_desc", label: "Most reposted" },
   { value: "bookmark_count_desc", label: "Most bookmarked" },

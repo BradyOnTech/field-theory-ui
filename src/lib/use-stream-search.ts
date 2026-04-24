@@ -7,13 +7,24 @@ const DEFAULT_SORT: SortKey = "posted_desc";
 const VALID_SORTS: ReadonlySet<SortKey> = new Set<SortKey>([
   "posted_desc",
   "posted_asc",
-  "bookmarked_desc",
-  "bookmarked_asc",
   "likes_desc",
   "reposts_desc",
   "bookmark_count_desc",
   "relevance",
 ]);
+// ft bookmark exports do not populate bookmarked_at, so keep old URLs working by
+// mapping the removed bookmark-date sorts onto the equivalent posted-date sorts.
+const LEGACY_SORT_ALIASES: Readonly<Record<string, SortKey>> = {
+  bookmarked_desc: "posted_desc",
+  bookmarked_asc: "posted_asc",
+};
+
+function normalizeSortParam(sort: string | null): SortKey {
+  if (!sort) return DEFAULT_SORT;
+
+  const mapped = LEGACY_SORT_ALIASES[sort] ?? sort;
+  return VALID_SORTS.has(mapped as SortKey) ? (mapped as SortKey) : DEFAULT_SORT;
+}
 
 const PAGE_SIZE = 20;
 
@@ -77,10 +88,8 @@ export function useStreamSearch(): UseStreamSearchReturn {
   const authorFilter = searchParams.get("author") || "";
   const afterFilter = searchParams.get("after") || "";
   const beforeFilter = searchParams.get("before") || "";
-  const sortRaw = searchParams.get("sort") || "";
-  const sort: SortKey = VALID_SORTS.has(sortRaw as SortKey)
-    ? (sortRaw as SortKey)
-    : DEFAULT_SORT;
+  const sortRaw = searchParams.get("sort");
+  const sort = normalizeSortParam(sortRaw);
 
   // Data state
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
@@ -118,6 +127,15 @@ export function useStreamSearch(): UseStreamSearchReturn {
         console.warn("Failed to load collections for filter dropdown:", err);
       });
   }, []);
+
+  useEffect(() => {
+    if (!sortRaw) return;
+    if (sortRaw === sort) return;
+
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set("sort", sort);
+    setSearchParams(newParams, { replace: true });
+  }, [searchParams, setSearchParams, sort, sortRaw]);
 
   // Build search params from current filters
   const buildSearchParams = useCallback(

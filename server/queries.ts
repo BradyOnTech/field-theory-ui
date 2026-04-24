@@ -579,8 +579,6 @@ export function getTopAuthors(limit = 20): TopAuthorResult[] {
 export type SortKey =
   | "posted_desc"
   | "posted_asc"
-  | "bookmarked_desc"
-  | "bookmarked_asc"
   | "likes_desc"
   | "reposts_desc"
   | "bookmark_count_desc"
@@ -589,19 +587,24 @@ export type SortKey =
 const VALID_SORTS: ReadonlySet<SortKey> = new Set<SortKey>([
   "posted_desc",
   "posted_asc",
-  "bookmarked_desc",
-  "bookmarked_asc",
   "likes_desc",
   "reposts_desc",
   "bookmark_count_desc",
   "relevance",
 ]);
+// The synced ft dataset leaves bookmarked_at null, so preserve stale bookmark-date
+// sort params by degrading them to the equivalent posted_at sorts.
+const LEGACY_SORT_ALIASES: Readonly<Record<string, SortKey>> = {
+  bookmarked_desc: "posted_desc",
+  bookmarked_asc: "posted_asc",
+};
 
 function normalizeSort(sort: string | undefined, hasFts: boolean): SortKey {
-  if (sort && VALID_SORTS.has(sort as SortKey)) {
+  const normalized = sort ? (LEGACY_SORT_ALIASES[sort] ?? sort) : undefined;
+  if (normalized && VALID_SORTS.has(normalized as SortKey)) {
     // Relevance only meaningful inside the FTS path; fall back otherwise.
-    if (sort === "relevance" && !hasFts) return "posted_desc";
-    return sort as SortKey;
+    if (normalized === "relevance" && !hasFts) return "posted_desc";
+    return normalized as SortKey;
   }
   return "posted_desc";
 }
@@ -616,10 +619,6 @@ function buildSortClause(sort: SortKey, prefix = ""): string {
   switch (sort) {
     case "posted_asc":
       return `ORDER BY parse_twitter_date_iso(${p}posted_at) ASC NULLS LAST, ${p}id ASC`;
-    case "bookmarked_desc":
-      return `ORDER BY ${p}bookmarked_at DESC NULLS LAST, ${p}id DESC`;
-    case "bookmarked_asc":
-      return `ORDER BY ${p}bookmarked_at ASC NULLS LAST, ${p}id ASC`;
     case "likes_desc":
       return `ORDER BY COALESCE(${p}like_count, 0) DESC, parse_twitter_date_iso(${p}posted_at) DESC`;
     case "reposts_desc":

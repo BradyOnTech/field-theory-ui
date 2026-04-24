@@ -87,8 +87,6 @@ server.registerTool(
         .enum([
           "posted_desc",
           "posted_asc",
-          "bookmarked_desc",
-          "bookmarked_asc",
           "likes_desc",
           "reposts_desc",
           "bookmark_count_desc",

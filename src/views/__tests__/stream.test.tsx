@@ -17,9 +17,11 @@ vi.mock("@/lib/api", () => ({
   fetchSearch: vi.fn(),
   fetchCategories: vi.fn(),
   fetchDomains: vi.fn(),
+  fetchCollections: vi.fn(),
+  fetchBookmark: vi.fn(),
 }));
 
-import { fetchSearch, fetchCategories, fetchDomains } from "@/lib/api";
+import { fetchSearch, fetchCategories, fetchDomains, fetchCollections, fetchBookmark } from "@/lib/api";
 
 const mockBookmarks = [
   {
@@ -138,6 +140,19 @@ const mockDomains = [
   { name: "devops", count: 300 },
 ];
 
+const mockCollections = [
+  {
+    id: 1,
+    slug: "ai-tools",
+    name: "AI Tools",
+    description: "",
+    color: "",
+    bookmark_count: 12,
+    created_at: "",
+    updated_at: "",
+  },
+];
+
 function renderStream(initialEntries = ["/stream"]) {
   return render(
     <MemoryRouter initialEntries={initialEntries}>
@@ -154,6 +169,14 @@ describe("StreamView", () => {
     });
     vi.mocked(fetchCategories).mockResolvedValue(mockCategories);
     vi.mocked(fetchDomains).mockResolvedValue(mockDomains);
+    vi.mocked(fetchCollections).mockResolvedValue(mockCollections);
+    vi.mocked(fetchBookmark).mockImplementation(async (id) => {
+      const bookmark = mockBookmarks.find((item) => item.id === Number(id)) ?? mockBookmarks[0]!;
+      return {
+        ...bookmark,
+        collections: [],
+      };
+    });
   });
 
   afterEach(() => {
@@ -187,6 +210,29 @@ describe("StreamView", () => {
           expect.any(AbortSignal),
         );
       });
+    });
+
+    it("does not offer bookmark-date sort options backed by null data", async () => {
+      renderStream();
+
+      const sortSelect = await screen.findByLabelText(/sort bookmarks/i);
+
+      expect(screen.queryByRole("option", { name: /recently bookmarked/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("option", { name: /first bookmarked/i })).not.toBeInTheDocument();
+      expect(sortSelect).toBeInTheDocument();
+    });
+
+    it("normalizes legacy bookmark sort params to supported posted-date sorts", async () => {
+      renderStream(["/stream?sort=bookmarked_asc"]);
+
+      await waitFor(() => {
+        expect(fetchSearch).toHaveBeenCalledWith(
+          expect.objectContaining({ sort: "posted_asc", limit: 20, offset: 0 }),
+          expect.any(AbortSignal),
+        );
+      });
+
+      expect(screen.getByLabelText(/sort bookmarks/i)).toHaveValue("posted_asc");
     });
   });
 
@@ -433,12 +479,13 @@ describe("StreamView", () => {
   });
 
   describe("Data Fetching", () => {
-    it("loads categories and domains for filter dropdowns", async () => {
+    it("loads categories, domains, and collections for filter dropdowns", async () => {
       renderStream();
 
       await waitFor(() => {
         expect(fetchCategories).toHaveBeenCalled();
         expect(fetchDomains).toHaveBeenCalled();
+        expect(fetchCollections).toHaveBeenCalled();
       });
     });
   });
