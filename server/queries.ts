@@ -576,6 +576,65 @@ export function getTopAuthors(limit = 20): TopAuthorResult[] {
 
 // --- Search result interfaces ---
 
+export type SortKey =
+  | "posted_desc"
+  | "posted_asc"
+  | "bookmarked_desc"
+  | "bookmarked_asc"
+  | "likes_desc"
+  | "reposts_desc"
+  | "bookmark_count_desc"
+  | "relevance";
+
+const VALID_SORTS: ReadonlySet<SortKey> = new Set<SortKey>([
+  "posted_desc",
+  "posted_asc",
+  "bookmarked_desc",
+  "bookmarked_asc",
+  "likes_desc",
+  "reposts_desc",
+  "bookmark_count_desc",
+  "relevance",
+]);
+
+function normalizeSort(sort: string | undefined, hasFts: boolean): SortKey {
+  if (sort && VALID_SORTS.has(sort as SortKey)) {
+    // Relevance only meaningful inside the FTS path; fall back otherwise.
+    if (sort === "relevance" && !hasFts) return "posted_desc";
+    return sort as SortKey;
+  }
+  return "posted_desc";
+}
+
+/**
+ * Build the ORDER BY fragment for a given sort key. Uses the column prefix so
+ * this works in both plain and JOINed (FTS) queries. NULLs are always placed
+ * LAST so missing values don't dominate the top of the list.
+ */
+function buildSortClause(sort: SortKey, prefix = ""): string {
+  const p = prefix;
+  switch (sort) {
+    case "posted_asc":
+      return `ORDER BY parse_twitter_date_iso(${p}posted_at) ASC NULLS LAST, ${p}id ASC`;
+    case "bookmarked_desc":
+      return `ORDER BY ${p}bookmarked_at DESC NULLS LAST, ${p}id DESC`;
+    case "bookmarked_asc":
+      return `ORDER BY ${p}bookmarked_at ASC NULLS LAST, ${p}id ASC`;
+    case "likes_desc":
+      return `ORDER BY COALESCE(${p}like_count, 0) DESC, parse_twitter_date_iso(${p}posted_at) DESC`;
+    case "reposts_desc":
+      return `ORDER BY COALESCE(${p}repost_count, 0) DESC, parse_twitter_date_iso(${p}posted_at) DESC`;
+    case "bookmark_count_desc":
+      return `ORDER BY COALESCE(${p}bookmark_count, 0) DESC, parse_twitter_date_iso(${p}posted_at) DESC`;
+    case "relevance":
+      // FTS path only — handled inline there (bm25 then posted_at). Defensive fallback:
+      return `ORDER BY parse_twitter_date_iso(${p}posted_at) DESC`;
+    case "posted_desc":
+    default:
+      return `ORDER BY parse_twitter_date_iso(${p}posted_at) DESC NULLS LAST, ${p}id DESC`;
+  }
+}
+
 interface SearchFilters {
   q?: string;
   author?: string;
@@ -584,6 +643,7 @@ interface SearchFilters {
   collection?: string; // collection slug
   after?: string;
   before?: string;
+  sort?: SortKey | string;
   limit?: number;
   offset?: number;
 }
@@ -716,14 +776,20 @@ export function searchBookmarks(filters: SearchFilters): SearchResult {
     const countRow = database.prepare(countSql).get(sanitized, ...params) as RawRow;
     const total = (countRow?.total as number) || 0;
 
-    // Results query with BM25 ranking
+    const sort = normalizeSort(filters.sort, true);
+    const orderBy =
+      sort === "relevance"
+        ? "ORDER BY bm25(bookmarks_fts), parse_twitter_date_iso(b.posted_at) DESC"
+        : buildSortClause(sort, "b.");
+
+    // Results query with BM25 ranking available as a secondary tiebreaker
     const resultsSql = `
       SELECT b.*, bm25(bookmarks_fts) as rank
       FROM bookmarks_fts fts
       JOIN bookmarks b ON b.rowid = fts.rowid
       WHERE bookmarks_fts MATCH ?
       ${whereClause}
-      ORDER BY parse_twitter_date_iso(b.posted_at) DESC, bm25(bookmarks_fts)
+      ${orderBy}
       LIMIT ? OFFSET ?
     `;
     const rows = database.prepare(resultsSql).all(sanitized, ...params, limit, offset) as RawRow[];
@@ -753,10 +819,13 @@ function searchBookmarksNoFTS(
   const countRow = database.prepare(countSql).get(...params) as RawRow;
   const total = (countRow?.total as number) || 0;
 
+  const sort = normalizeSort(filters.sort, false);
+  const orderBy = buildSortClause(sort);
+
   const resultsSql = `
     SELECT * FROM bookmarks
     ${whereClause}
-    ORDER BY parse_twitter_date_iso(posted_at) DESC
+    ${orderBy}
     LIMIT ? OFFSET ?
   `;
   const rows = database.prepare(resultsSql).all(...params, limit, offset) as RawRow[];

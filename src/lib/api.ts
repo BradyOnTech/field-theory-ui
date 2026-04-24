@@ -79,6 +79,7 @@ export function fetchSearch(params: SearchParams, signal?: AbortSignal): Promise
   if (params.collection) searchParams.set("collection", params.collection);
   if (params.after) searchParams.set("after", params.after);
   if (params.before) searchParams.set("before", params.before);
+  if (params.sort) searchParams.set("sort", params.sort);
   if (params.limit !== undefined) searchParams.set("limit", String(params.limit));
   if (params.offset !== undefined) searchParams.set("offset", String(params.offset));
   return fetchJSON<SearchResult>(`${API_BASE}/search?${searchParams.toString()}`, signal);

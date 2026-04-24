@@ -1,7 +1,19 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchSearch, fetchCategories, fetchDomains, fetchCollections } from "@/lib/api";
-import type { Bookmark, CategoryCount, Collection, DomainCount } from "@/lib/types";
+import type { Bookmark, CategoryCount, Collection, DomainCount, SortKey } from "@/lib/types";
+
+const DEFAULT_SORT: SortKey = "posted_desc";
+const VALID_SORTS: ReadonlySet<SortKey> = new Set<SortKey>([
+  "posted_desc",
+  "posted_asc",
+  "bookmarked_desc",
+  "bookmarked_asc",
+  "likes_desc",
+  "reposts_desc",
+  "bookmark_count_desc",
+  "relevance",
+]);
 
 const PAGE_SIZE = 20;
 
@@ -14,6 +26,7 @@ interface UseStreamSearchReturn {
   authorFilter: string;
   afterFilter: string;
   beforeFilter: string;
+  sort: SortKey;
 
   // Result state
   bookmarks: Bookmark[];
@@ -47,6 +60,7 @@ interface UseStreamSearchReturn {
     author: string | undefined;
     after: string | undefined;
     before: string | undefined;
+    sort: SortKey;
     limit: number;
     offset: number;
   };
@@ -63,6 +77,10 @@ export function useStreamSearch(): UseStreamSearchReturn {
   const authorFilter = searchParams.get("author") || "";
   const afterFilter = searchParams.get("after") || "";
   const beforeFilter = searchParams.get("before") || "";
+  const sortRaw = searchParams.get("sort") || "";
+  const sort: SortKey = VALID_SORTS.has(sortRaw as SortKey)
+    ? (sortRaw as SortKey)
+    : DEFAULT_SORT;
 
   // Data state
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
@@ -111,10 +129,11 @@ export function useStreamSearch(): UseStreamSearchReturn {
       author: authorFilter || undefined,
       after: afterFilter || undefined,
       before: beforeFilter || undefined,
+      sort,
       limit: PAGE_SIZE,
       offset,
     }),
-    [query, categoryFilter, domainFilter, collectionFilter, authorFilter, afterFilter, beforeFilter],
+    [query, categoryFilter, domainFilter, collectionFilter, authorFilter, afterFilter, beforeFilter, sort],
   );
 
   // Load initial results when filters change
@@ -248,6 +267,7 @@ export function useStreamSearch(): UseStreamSearchReturn {
     authorFilter,
     afterFilter,
     beforeFilter,
+    sort,
     bookmarks,
     total,
     isLoading,

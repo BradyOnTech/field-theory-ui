@@ -1,11 +1,23 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Search, SlidersHorizontal, ChevronRight } from "lucide-react";
+import { Search, SlidersHorizontal, ChevronRight, ArrowUpDown } from "lucide-react";
 import { formatNumber, tweetUrl } from "@/lib/utils";
 import { useListKeyboardNav } from "@/lib/use-list-keyboard-nav";
 import { Skeleton } from "@/components/skeleton";
 import { BookmarkCard } from "@/components/stream-bookmark-card";
 import { useStreamSearch } from "@/lib/use-stream-search";
 import { ErrorRetry } from "@/components/error-retry";
+import type { SortKey } from "@/lib/types";
+
+const SORT_OPTIONS: { value: SortKey; label: string; needsQuery?: boolean }[] = [
+  { value: "posted_desc", label: "Newest posted" },
+  { value: "posted_asc", label: "Oldest posted" },
+  { value: "bookmarked_desc", label: "Recently bookmarked" },
+  { value: "bookmarked_asc", label: "First bookmarked" },
+  { value: "likes_desc", label: "Most liked" },
+  { value: "reposts_desc", label: "Most reposted" },
+  { value: "bookmark_count_desc", label: "Most bookmarked" },
+  { value: "relevance", label: "Relevance", needsQuery: true },
+];
 
 export function StreamView() {
   const {
@@ -16,6 +28,7 @@ export function StreamView() {
     authorFilter,
     afterFilter,
     beforeFilter,
+    sort,
     bookmarks,
     total,
     isLoading,
@@ -169,20 +182,39 @@ export function StreamView() {
           )}
         </div>
 
-        {/* Search Bar */}
-        <form onSubmit={handleSearchSubmit} className="mt-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-            <input
-              id="stream-search"
-              type="text"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search bookmarks..."
-              className="w-full rounded-button border border-border bg-background py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-disabled focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-ring min-h-[44px]"
-            />
+        {/* Search Bar + Sort */}
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <form onSubmit={handleSearchSubmit} className="flex-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <input
+                id="stream-search"
+                type="text"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search bookmarks..."
+                className="w-full rounded-button border border-border bg-background py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-disabled focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-ring min-h-[44px]"
+              />
+            </div>
+          </form>
+          <div className="relative flex items-center sm:w-56">
+            <ArrowUpDown className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+            <select
+              aria-label="Sort bookmarks"
+              value={sort}
+              onChange={(e) => updateFilters({ sort: e.target.value })}
+              className="min-h-[44px] w-full appearance-none rounded-button border border-border bg-background py-2.5 pl-9 pr-8 text-sm text-foreground focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value} disabled={opt.needsQuery && !query}>
+                  {opt.label}
+                  {opt.needsQuery && !query ? " (needs query)" : ""}
+                </option>
+              ))}
+            </select>
+            <ChevronRight className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 rotate-90 text-muted" />
           </div>
-        </form>
+        </div>
 
         {/* Advanced Filters Toggle */}
         <button

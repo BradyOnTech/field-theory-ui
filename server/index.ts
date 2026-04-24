@@ -511,6 +511,7 @@ export function handleRequest(req: IncomingMessage, res: ServerResponse): void {
           const collection = params.get("collection") || undefined;
           const after = params.get("after") || undefined;
           const before = params.get("before") || undefined;
+          const sort = params.get("sort") || undefined;
           const { value: limit, invalid: limitInvalid } = parseNumericParam(params, "limit", 20);
           if (limitInvalid) {
             sendError(res, "Invalid limit parameter: must be a positive integer", 400);
@@ -529,6 +530,7 @@ export function handleRequest(req: IncomingMessage, res: ServerResponse): void {
             collection,
             after,
             before,
+            sort,
             limit,
             offset,
           });

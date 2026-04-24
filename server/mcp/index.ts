@@ -83,6 +83,19 @@ server.registerTool(
       collection: z.string().optional().describe("Filter by collection slug"),
       after: z.string().optional().describe("ISO date: only bookmarks posted on/after"),
       before: z.string().optional().describe("ISO date: only bookmarks posted on/before"),
+      sort: z
+        .enum([
+          "posted_desc",
+          "posted_asc",
+          "bookmarked_desc",
+          "bookmarked_asc",
+          "likes_desc",
+          "reposts_desc",
+          "bookmark_count_desc",
+          "relevance",
+        ])
+        .optional()
+        .describe("Sort order. Default: posted_desc (newest first). 'relevance' needs a query."),
       limit: z.number().int().min(1).max(100).optional().default(20),
       offset: z.number().int().min(0).optional().default(0),
     },
@@ -96,6 +109,7 @@ server.registerTool(
       collection: args.collection,
       after: args.after,
       before: args.before,
+      sort: args.sort,
       limit: args.limit,
       offset: args.offset,
     });
