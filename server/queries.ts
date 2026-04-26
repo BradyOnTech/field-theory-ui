@@ -1,7 +1,7 @@
 // All SQLite queries go in this file. No raw SQL elsewhere.
 
 import Database from "better-sqlite3";
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, statSync } from "fs";
 import path from "path";
 import os from "os";
 
@@ -144,21 +144,7 @@ export function getDb(): Database.Database {
   return database;
 }
 
-// --- Writable DB handle (for Collections) ---
-//
-// Collections are a UI-owned concept that don't exist in the ft-synced schema.
-// We keep a single cached read-write connection scoped to Collections tables.
-// Readonly getDb() connections see the new tables too (same file), but are
-// never mutated. ft sync only touches the bookmarks table, not ours.
-
-let writableDb: Database.Database | null = null;
-
-export function getWritableDb(): Database.Database {
-  if (writableDb) return writableDb;
-
-  const database = new Database(dbPath, { fileMustExist: true });
-  ensureCollectionsSchema(database);
-
+function registerDateFunctions(database: Database.Database): void {
   database.function("parse_twitter_date_ymd", (dateStr: unknown) => {
     if (typeof dateStr !== "string") return null;
     return parseTwitterDateToYMD(dateStr);
@@ -168,9 +154,71 @@ export function getWritableDb(): Database.Database {
     if (typeof dateStr !== "string") return null;
     return parseTwitterDateToISO(dateStr);
   });
+}
 
+// --- Writable DB handle (for Collections) ---
+//
+// Collections are a UI-owned concept that don't exist in the ft-synced schema.
+// We keep a cached read-write connection scoped to Collections tables, but ft
+// sync can replace the bookmarks DB file in-place. When that happens, SQLite
+// starts rejecting writes on the old handle with SQLITE_READONLY_DBMOVED, so we
+// detect file replacement and reopen the writable connection.
+
+let writableDb: Database.Database | null = null;
+let writableDbIdentity: string | null = null;
+
+function getDbIdentity(): string {
+  const stats = statSync(dbPath);
+  return `${stats.dev}:${stats.ino}`;
+}
+
+function closeWritableDb(): void {
+  if (writableDb) {
+    try {
+      writableDb.close();
+    } catch {
+      // Ignore close errors while resetting a broken connection.
+    }
+  }
+  writableDb = null;
+  writableDbIdentity = null;
+}
+
+function openWritableDb(): Database.Database {
+  const database = new Database(dbPath, { fileMustExist: true });
+  ensureCollectionsSchema(database);
+  registerDateFunctions(database);
+  writableDbIdentity = getDbIdentity();
   writableDb = database;
-  return writableDb;
+  return database;
+}
+
+function isReadonlyDbMovedError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: string }).code === "SQLITE_READONLY_DBMOVED"
+  );
+}
+
+function withWritableDbRetry<T>(operation: (database: Database.Database) => T): T {
+  try {
+    return operation(getWritableDb());
+  } catch (error) {
+    if (!isReadonlyDbMovedError(error)) throw error;
+    closeWritableDb();
+    return operation(getWritableDb());
+  }
+}
+
+export function getWritableDb(): Database.Database {
+  const currentIdentity = getDbIdentity();
+  if (writableDb && writableDbIdentity === currentIdentity) {
+    return writableDb;
+  }
+  closeWritableDb();
+  return openWritableDb();
 }
 
 function ensureCollectionsSchema(database: Database.Database): void {
@@ -1638,20 +1686,7 @@ export function listCollections(): CollectionSummary[] {
   }));
 }
 
-export function getCollectionBySlug(slug: string): CollectionSummary | null {
-  const database = getWritableDb();
-  const row = database
-    .prepare(
-      `SELECT c.id, c.slug, c.name, c.description, c.color,
-              c.created_at, c.updated_at,
-              (SELECT COUNT(*) FROM bookmark_collections
-                 WHERE collection_id = c.id) as bookmark_count
-       FROM collections c
-       WHERE c.slug = ?`,
-    )
-    .get(slug) as RawRow | undefined;
-
-  if (!row) return null;
+function mapCollectionSummary(row: RawRow): CollectionSummary {
   return {
     id: row.id as number,
     slug: row.slug as string,
@@ -1664,6 +1699,25 @@ export function getCollectionBySlug(slug: string): CollectionSummary | null {
   };
 }
 
+function getCollectionBySlugWithDb(database: Database.Database, slug: string): CollectionSummary | null {
+  const row = database
+    .prepare(
+      `SELECT c.id, c.slug, c.name, c.description, c.color,
+              c.created_at, c.updated_at,
+              (SELECT COUNT(*) FROM bookmark_collections
+                 WHERE collection_id = c.id) as bookmark_count
+       FROM collections c
+       WHERE c.slug = ?`,
+    )
+    .get(slug) as RawRow | undefined;
+
+  return row ? mapCollectionSummary(row) : null;
+}
+
+export function getCollectionBySlug(slug: string): CollectionSummary | null {
+  return getCollectionBySlugWithDb(getWritableDb(), slug);
+}
+
 export function createCollection(input: {
   name: string;
   description?: string;
@@ -1673,76 +1727,79 @@ export function createCollection(input: {
   const name = input.name.trim();
   if (!name) throw new Error("Collection name is required");
 
-  const database = getWritableDb();
-  const baseSlug = input.slug ? slugify(input.slug) : slugify(name);
-  const slug = uniqueSlug(database, baseSlug);
-  const now = new Date().toISOString();
+  return withWritableDbRetry((database) => {
+    const baseSlug = input.slug ? slugify(input.slug) : slugify(name);
+    const slug = uniqueSlug(database, baseSlug);
+    const now = new Date().toISOString();
 
-  database
-    .prepare(
-      `INSERT INTO collections (slug, name, description, color, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    )
-    .run(slug, name, input.description || null, input.color || null, now, now);
+    database
+      .prepare(
+        `INSERT INTO collections (slug, name, description, color, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(slug, name, input.description || null, input.color || null, now, now);
 
-  const created = getCollectionBySlug(slug);
-  if (!created) throw new Error("Failed to create collection");
-  return created;
+    const created = getCollectionBySlugWithDb(database, slug);
+    if (!created) throw new Error("Failed to create collection");
+    return created;
+  });
 }
 
 export function updateCollection(
   slug: string,
   updates: { name?: string; description?: string; color?: string },
 ): CollectionSummary | null {
-  const database = getWritableDb();
-  const existing = getCollectionBySlug(slug);
-  if (!existing) return null;
+  return withWritableDbRetry((database) => {
+    const existing = getCollectionBySlugWithDb(database, slug);
+    if (!existing) return null;
 
-  const fields: string[] = [];
-  const values: (string | null)[] = [];
+    const fields: string[] = [];
+    const values: (string | null)[] = [];
 
-  if (updates.name !== undefined) {
-    const name = updates.name.trim();
-    if (!name) throw new Error("Collection name cannot be empty");
-    fields.push("name = ?");
-    values.push(name);
-  }
-  if (updates.description !== undefined) {
-    fields.push("description = ?");
-    values.push(updates.description || null);
-  }
-  if (updates.color !== undefined) {
-    fields.push("color = ?");
-    values.push(updates.color || null);
-  }
-  if (fields.length === 0) return existing;
+    if (updates.name !== undefined) {
+      const name = updates.name.trim();
+      if (!name) throw new Error("Collection name cannot be empty");
+      fields.push("name = ?");
+      values.push(name);
+    }
+    if (updates.description !== undefined) {
+      fields.push("description = ?");
+      values.push(updates.description || null);
+    }
+    if (updates.color !== undefined) {
+      fields.push("color = ?");
+      values.push(updates.color || null);
+    }
+    if (fields.length === 0) return existing;
 
-  fields.push("updated_at = ?");
-  values.push(new Date().toISOString());
-  values.push(slug);
+    fields.push("updated_at = ?");
+    values.push(new Date().toISOString());
+    values.push(slug);
 
-  database
-    .prepare(`UPDATE collections SET ${fields.join(", ")} WHERE slug = ?`)
-    .run(...values);
+    database
+      .prepare(`UPDATE collections SET ${fields.join(", ")} WHERE slug = ?`)
+      .run(...values);
 
-  return getCollectionBySlug(slug);
+    return getCollectionBySlugWithDb(database, slug);
+  });
 }
 
 export function deleteCollection(slug: string): boolean {
-  const database = getWritableDb();
-  const existing = getCollectionBySlug(slug);
-  if (!existing) return false;
+  return withWritableDbRetry((database) => {
+    const existing = getCollectionBySlugWithDb(database, slug);
+    if (!existing) return false;
 
-  // Manually cascade to bookmark_collections since FK enforcement requires
-  // PRAGMA foreign_keys = ON per connection, which we don't rely on.
-  const tx = database.transaction(() => {
-    database
-      .prepare("DELETE FROM bookmark_collections WHERE collection_id = ?")
-      .run(existing.id);
-    database.prepare("DELETE FROM collections WHERE id = ?").run(existing.id);
+    // Manually cascade to bookmark_collections since FK enforcement requires
+    // PRAGMA foreign_keys = ON per connection, which we don't rely on.
+    const tx = database.transaction(() => {
+      database
+        .prepare("DELETE FROM bookmark_collections WHERE collection_id = ?")
+        .run(existing.id);
+      database.prepare("DELETE FROM collections WHERE id = ?").run(existing.id);
+    });
+    tx();
+    return true;
   });
-  tx();
-  return true;
 }
 
 export function addBookmarksToCollection(
@@ -1752,33 +1809,34 @@ export function addBookmarksToCollection(
 ): { added: number; skipped: number } {
   if (bookmarkIds.length === 0) return { added: 0, skipped: 0 };
 
-  const database = getWritableDb();
-  const collection = getCollectionBySlug(slug);
-  if (!collection) throw new Error(`Collection not found: ${slug}`);
+  return withWritableDbRetry((database) => {
+    const collection = getCollectionBySlugWithDb(database, slug);
+    if (!collection) throw new Error(`Collection not found: ${slug}`);
 
-  const now = new Date().toISOString();
-  const stmt = database.prepare(
-    `INSERT OR IGNORE INTO bookmark_collections
-       (bookmark_id, collection_id, added_at, added_by)
-     VALUES (?, ?, ?, ?)`,
-  );
+    const now = new Date().toISOString();
+    const stmt = database.prepare(
+      `INSERT OR IGNORE INTO bookmark_collections
+         (bookmark_id, collection_id, added_at, added_by)
+       VALUES (?, ?, ?, ?)`,
+    );
 
-  let added = 0;
-  let skipped = 0;
-  const tx = database.transaction(() => {
-    for (const id of bookmarkIds) {
-      const result = stmt.run(id, collection.id, now, addedBy);
-      if (result.changes > 0) added++;
-      else skipped++;
-    }
-    // Touch updated_at on the collection so recency sorts reflect activity.
-    database
-      .prepare("UPDATE collections SET updated_at = ? WHERE id = ?")
-      .run(now, collection.id);
+    let added = 0;
+    let skipped = 0;
+    const tx = database.transaction(() => {
+      for (const id of bookmarkIds) {
+        const result = stmt.run(id, collection.id, now, addedBy);
+        if (result.changes > 0) added++;
+        else skipped++;
+      }
+      // Touch updated_at on the collection so recency sorts reflect activity.
+      database
+        .prepare("UPDATE collections SET updated_at = ? WHERE id = ?")
+        .run(now, collection.id);
+    });
+    tx();
+
+    return { added, skipped };
   });
-  tx();
-
-  return { added, skipped };
 }
 
 export function removeBookmarksFromCollection(
@@ -1787,19 +1845,20 @@ export function removeBookmarksFromCollection(
 ): { removed: number } {
   if (bookmarkIds.length === 0) return { removed: 0 };
 
-  const database = getWritableDb();
-  const collection = getCollectionBySlug(slug);
-  if (!collection) throw new Error(`Collection not found: ${slug}`);
+  return withWritableDbRetry((database) => {
+    const collection = getCollectionBySlugWithDb(database, slug);
+    if (!collection) throw new Error(`Collection not found: ${slug}`);
 
-  const placeholders = bookmarkIds.map(() => "?").join(",");
-  const result = database
-    .prepare(
-      `DELETE FROM bookmark_collections
-       WHERE collection_id = ? AND bookmark_id IN (${placeholders})`,
-    )
-    .run(collection.id, ...bookmarkIds);
+    const placeholders = bookmarkIds.map(() => "?").join(",");
+    const result = database
+      .prepare(
+        `DELETE FROM bookmark_collections
+         WHERE collection_id = ? AND bookmark_id IN (${placeholders})`,
+      )
+      .run(collection.id, ...bookmarkIds);
 
-  return { removed: result.changes };
+    return { removed: result.changes };
+  });
 }
 
 export function getBookmarksByCollection(
@@ -1808,7 +1867,7 @@ export function getBookmarksByCollection(
   offset = 0,
 ): { results: BookmarkResult[]; total: number } | null {
   const database = getWritableDb();
-  const collection = getCollectionBySlug(slug);
+  const collection = getCollectionBySlugWithDb(database, slug);
   if (!collection) return null;
 
   const safeLimit = Math.min(Math.max(1, limit), 200);
