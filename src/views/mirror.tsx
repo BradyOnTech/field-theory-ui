@@ -290,7 +290,7 @@ export function MirrorView() {
   // If no handle configured, show the first-run prompt
   if (!handle && !isEditing) {
     return (
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <h1 className="text-2xl font-bold text-foreground">Mirror</h1>
         <p className="mt-1 text-sm text-muted">
           Self-analysis — your own bookmark patterns.
@@ -301,9 +301,9 @@ export function MirrorView() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Mirror</h1>
           <p className="mt-1 text-sm text-muted">
@@ -312,7 +312,7 @@ export function MirrorView() {
         </div>
         <div className="flex items-center gap-3">
           {isEditing ? (
-            <div className="flex gap-2">
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
               <input
                 type="text"
                 placeholder="your handle"
@@ -322,7 +322,7 @@ export function MirrorView() {
                   if (e.key === "Enter") saveHandle(editValue);
                   if (e.key === "Escape") setIsEditing(false);
                 }}
-                className="rounded-button border border-border bg-card px-3 py-1.5 text-sm text-foreground placeholder:text-disabled focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-ring"
+                className="min-h-[44px] min-w-0 flex-1 rounded-button border border-border bg-card px-3 py-1.5 text-sm text-foreground placeholder:text-disabled focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-ring sm:flex-none"
                 autoFocus
               />
               <button

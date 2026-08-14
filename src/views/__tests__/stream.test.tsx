@@ -237,6 +237,13 @@ describe("StreamView", () => {
   });
 
   describe("Filter Bar", () => {
+    async function openFilters() {
+      await waitFor(() => {
+        expect(fetchSearch).toHaveBeenCalled();
+      });
+      fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    }
+
     it("renders category dropdown populated from API", async () => {
       renderStream();
 
@@ -244,6 +251,7 @@ describe("StreamView", () => {
         expect(fetchCategories).toHaveBeenCalled();
       });
 
+      await openFilters();
       const categorySelect = screen.getByLabelText(/category/i);
       expect(categorySelect).toBeInTheDocument();
     });
@@ -255,16 +263,14 @@ describe("StreamView", () => {
         expect(fetchDomains).toHaveBeenCalled();
       });
 
+      await openFilters();
       const domainSelect = screen.getByLabelText(/domain/i);
       expect(domainSelect).toBeInTheDocument();
     });
 
     it("renders author text input", async () => {
       renderStream();
-
-      await waitFor(() => {
-        expect(fetchSearch).toHaveBeenCalled();
-      });
+      await openFilters();
 
       const authorInput = screen.getByPlaceholderText(/author/i);
       expect(authorInput).toBeInTheDocument();
@@ -272,10 +278,7 @@ describe("StreamView", () => {
 
     it("renders date range inputs", async () => {
       renderStream();
-
-      await waitFor(() => {
-        expect(fetchSearch).toHaveBeenCalled();
-      });
+      await openFilters();
 
       const afterInput = screen.getByLabelText(/after|from|start/i);
       const beforeInput = screen.getByLabelText(/before|to|end/i);
@@ -392,48 +395,31 @@ describe("StreamView", () => {
     });
   });
 
-  describe("Card Expansion", () => {
-    it("expands card on click showing full text and Open in X link", async () => {
+  describe("Card Actions", () => {
+    it("shows Open in X on every card without expanding", async () => {
       renderStream();
 
       await waitFor(() => {
         expect(screen.getByText("@user1")).toBeInTheDocument();
       });
 
-      // Click on first bookmark card
-      const card = screen.getByText("@user1").closest("[data-testid='bookmark-card']");
-      expect(card).toBeInTheDocument();
-      fireEvent.click(card!);
-
-      await waitFor(() => {
-        const openLink = screen.getByText(/open in x/i);
-        expect(openLink).toBeInTheDocument();
-        expect(openLink.closest("a")).toHaveAttribute(
-          "href",
-          "https://x.com/user1/status/111111",
-        );
-      });
+      const openLinks = screen.getAllByText(/open in x/i);
+      expect(openLinks.length).toBeGreaterThan(0);
+      expect(openLinks[0]!.closest("a")).toHaveAttribute(
+        "href",
+        "https://x.com/user1/status/111111",
+      );
     });
 
-    it("collapses expanded card on Escape key", async () => {
+    it("shows permalink to the in-app bookmark detail page", async () => {
       renderStream();
 
       await waitFor(() => {
         expect(screen.getByText("@user1")).toBeInTheDocument();
       });
 
-      const card = screen.getByText("@user1").closest("[data-testid='bookmark-card']");
-      fireEvent.click(card!);
-
-      await waitFor(() => {
-        expect(screen.getByText(/open in x/i)).toBeInTheDocument();
-      });
-
-      fireEvent.keyDown(document, { key: "Escape" });
-
-      await waitFor(() => {
-        expect(screen.queryByText(/open in x/i)).not.toBeInTheDocument();
-      });
+      const permalinks = screen.getAllByText(/permalink/i);
+      expect(permalinks[0]!.closest("a")).toHaveAttribute("href", "/bookmarks/1");
     });
   });
 
@@ -490,50 +476,17 @@ describe("StreamView", () => {
     });
   });
 
-  describe("Click Outside to Collapse", () => {
-    it("collapses expanded card when clicking outside it", async () => {
+  describe("Always-visible actions", () => {
+    it("keeps Open in X visible after clicking elsewhere", async () => {
       renderStream();
 
       await waitFor(() => {
         expect(screen.getByText("@user1")).toBeInTheDocument();
       });
 
-      // Expand a card
-      const card = screen.getByText("@user1").closest("[data-testid='bookmark-card']");
-      fireEvent.click(card!);
-
-      await waitFor(() => {
-        expect(screen.getByText(/open in x/i)).toBeInTheDocument();
-      });
-
-      // Click outside (on the document body)
+      expect(screen.getAllByText(/open in x/i).length).toBeGreaterThan(0);
       fireEvent.mouseDown(document.body);
-
-      await waitFor(() => {
-        expect(screen.queryByText(/open in x/i)).not.toBeInTheDocument();
-      });
-    });
-
-    it("does NOT collapse when clicking inside the expanded card", async () => {
-      renderStream();
-
-      await waitFor(() => {
-        expect(screen.getByText("@user1")).toBeInTheDocument();
-      });
-
-      // Expand a card
-      const card = screen.getByText("@user1").closest("[data-testid='bookmark-card']");
-      fireEvent.click(card!);
-
-      await waitFor(() => {
-        expect(screen.getByText(/open in x/i)).toBeInTheDocument();
-      });
-
-      // Click inside the expanded card (on the engagement text)
-      fireEvent.mouseDown(card!);
-
-      // Card should still be expanded
-      expect(screen.getByText(/open in x/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/open in x/i).length).toBeGreaterThan(0);
     });
   });
 

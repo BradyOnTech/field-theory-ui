@@ -17,6 +17,7 @@ import { formatTweetText } from "@/lib/tweet-text";
 import { ExternalLink, AlertTriangle, Inbox } from "lucide-react";
 import { SimplePagination } from "@/components/simple-pagination";
 import { ErrorRetry } from "@/components/error-retry";
+import { useIsMd } from "@/lib/use-media-query";
 
 function repoKey(url: string): string {
   return url.replace("https://github.com/", "");
@@ -144,7 +145,7 @@ function ExpandedRepoDetail({
   const isRateLimited = metadata?.error === "rate_limited";
 
   return (
-    <td colSpan={6} className="border-t border-border bg-card/50 px-6 py-4">
+    <div className="border-t border-border bg-card/50 px-4 py-4 md:px-6">
       {hasMetadata && metadata.description && (
         <p className="text-sm text-muted">{metadata.description}</p>
       )}
@@ -165,13 +166,13 @@ function ExpandedRepoDetail({
           href={repo.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-foreground"
+          className="inline-flex min-h-[44px] items-center gap-1 text-xs text-muted transition-colors hover:text-foreground"
           onClick={(e) => e.stopPropagation()}
         >
           Open on GitHub <ExternalLink className="h-3 w-3" />
         </a>
       </div>
-    </td>
+    </div>
   );
 }
 
@@ -239,6 +240,7 @@ function EmptyState({ title, description }: { title: string; description: string
 
 export function ForgeView() {
   const navigate = useNavigate();
+  const isMd = useIsMd();
 
   // Data state
   const [repos, setRepos] = useState<GithubRepo[]>([]);
@@ -403,7 +405,7 @@ export function ForgeView() {
   );
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground">Forge</h1>
         <p className="mt-1 text-sm text-muted">
@@ -428,13 +430,13 @@ export function ForgeView() {
               <span className="text-xs text-muted">Loading metadata…</span>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <input
               type="text"
               value={repoSearch}
               onChange={(e) => { setRepoSearch(e.target.value); setRepoPage(0); }}
               placeholder="Search repos..."
-              className="h-10 w-52 rounded-button border border-border bg-background px-3 text-sm text-foreground placeholder:text-disabled focus:border-[#333] focus:outline-none"
+              className="h-10 w-full rounded-button border border-border bg-background px-3 text-sm text-foreground placeholder:text-disabled focus:border-[#333] focus:outline-none sm:w-52"
             />
             <select
               value={repoSort}
@@ -467,6 +469,7 @@ export function ForgeView() {
           />
         ) : (
           <>
+            {isMd ? (
             <div className="overflow-hidden rounded-card border border-border">
               <div className="overflow-x-auto">
               <table className="w-full min-w-[600px] text-sm">
@@ -527,7 +530,9 @@ export function ForgeView() {
                           </tr>
                           {isExpanded && (
                             <tr>
-                              <ExpandedRepoDetail repo={repo} metadata={meta} />
+                              <td colSpan={6} className="p-0">
+                                <ExpandedRepoDetail repo={repo} metadata={meta} />
+                              </td>
                             </tr>
                           )}
                         </Fragment>
@@ -538,6 +543,65 @@ export function ForgeView() {
               </table>
               </div>
             </div>
+            ) : (
+            <div className="flex flex-col gap-3">
+              {paginatedRepos.length === 0 ? (
+                <div className="rounded-card border border-border px-4 py-8 text-center text-muted">
+                  No repos match your search.
+                </div>
+              ) : (
+                paginatedRepos.map((repo) => {
+                  const key = repoKey(repo.url).toLowerCase();
+                  const meta = metadata[key];
+                  const hasMeta = meta && !meta.error;
+                  const isExpanded = expandedRepo === repo.url;
+                  return (
+                    <div
+                      key={repo.url}
+                      className="rounded-card border border-border bg-card"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setExpandedRepo(isExpanded ? null : repo.url)}
+                        className="flex w-full flex-col gap-2 p-4 text-left"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="font-mono text-sm font-medium text-foreground">
+                            {repoKey(repo.url)}
+                          </span>
+                          <span className="text-disabled">{isExpanded ? "−" : "+"}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
+                          <span>
+                            <span className="font-mono">{hasMeta ? formatNumber(meta.stargazers_count) : "--"}</span> stars
+                          </span>
+                          {hasMeta && meta.language && (
+                            <span className="flex items-center gap-1.5">
+                              <span
+                                className="inline-block h-2.5 w-2.5 rounded-full"
+                                style={{ backgroundColor: getLanguageColor(meta.language) }}
+                              />
+                              {meta.language}
+                            </span>
+                          )}
+                          <span>
+                            <span className="font-mono">{repo.count}</span> mentions
+                          </span>
+                        </div>
+                      </button>
+                      <div className="px-4 pb-4" onClick={(e) => e.stopPropagation()}>
+                        <StatusBadge
+                          status={getStatus(`repo:${key}`)}
+                          onClick={() => toggleStatus(`repo:${key}`)}
+                        />
+                      </div>
+                      {isExpanded && <ExpandedRepoDetail repo={repo} metadata={meta} />}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            )}
             <SimplePagination
               page={repoPage + 1}
               totalPages={repoTotalPages}

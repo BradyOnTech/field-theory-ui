@@ -18,6 +18,7 @@ import { formatNumber, truncateText } from "@/lib/utils";
 import { formatTweetText, decodeEntities } from "@/lib/tweet-text";
 import { SimplePagination } from "@/components/simple-pagination";
 import { ErrorRetry } from "@/components/error-retry";
+import { useIsMd } from "@/lib/use-media-query";
 
 // Distinct colors for stacked area domains
 const DOMAIN_COLORS: Record<string, string> = {
@@ -311,7 +312,7 @@ function ExpandedRowDetail({
   const monthDrifts = driftEvents.filter((d) => d.month === entry.month);
 
   return (
-    <td colSpan={6} className="border-t border-border bg-card/50 px-6 py-4">
+    <div className="border-t border-border bg-card/50 px-4 py-4 md:px-6">
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <div>
           <p className="mb-2 text-xs font-semibold text-muted">Categories</p>
@@ -389,12 +390,13 @@ function ExpandedRowDetail({
           </div>
         </div>
       )}
-    </td>
+    </div>
   );
 }
 
 export function ChronosView() {
   const navigate = useNavigate();
+  const isMd = useIsMd();
   const [monthlyData, setMonthlyData] = useState<MonthlyBreakdownEntry[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -541,7 +543,7 @@ export function ChronosView() {
   const maxMonth = monthlyData.length > 0 ? monthlyData[monthlyData.length - 1]!.month : "";
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground">Chronos</h1>
@@ -745,13 +747,13 @@ export function ChronosView() {
             {tableFiltered.length} months{searchQuery ? ` matching "${searchQuery}"` : ""}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); setPage(0); }}
             placeholder="Search months..."
-            className="h-10 w-56 rounded-button border border-border bg-background px-3 text-sm text-foreground placeholder:text-disabled focus:border-[#333] focus:outline-none"
+            className="h-10 w-full rounded-button border border-border bg-background px-3 text-sm text-foreground placeholder:text-disabled focus:border-[#333] focus:outline-none sm:w-56"
           />
           <select
             value={perPage}
@@ -765,6 +767,7 @@ export function ChronosView() {
         </div>
       </div>
 
+      {isMd ? (
       <div className="overflow-hidden rounded-card border border-border">
         <div className="overflow-x-auto">
         <table className="w-full min-w-[600px] text-sm">
@@ -811,7 +814,9 @@ export function ChronosView() {
                   </tr>
                   {isExpanded && (
                     <tr>
-                      <ExpandedRowDetail entry={entry} driftEvents={driftEvents} onNavigate={navigate} />
+                      <td colSpan={6} className="p-0">
+                        <ExpandedRowDetail entry={entry} driftEvents={driftEvents} onNavigate={navigate} />
+                      </td>
                     </tr>
                   )}
                 </Fragment>
@@ -828,6 +833,41 @@ export function ChronosView() {
         </table>
         </div>
       </div>
+      ) : (
+      <div className="flex flex-col gap-3">
+        {tablePage.length === 0 ? (
+          <div className="rounded-card border border-border px-4 py-8 text-center text-muted">
+            {monthlyData.length === 0 ? "Loading monthly data..." : "No months match your search."}
+          </div>
+        ) : (
+          tablePage.map((entry) => {
+            const isExpanded = expandedMonth === entry.month;
+            return (
+              <div key={entry.month} className="rounded-card border border-border bg-card">
+                <button
+                  type="button"
+                  onClick={() => setExpandedMonth(isExpanded ? null : entry.month)}
+                  className="flex w-full flex-col gap-2 p-4 text-left"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium text-foreground">{formatMonthLabel(entry.month)}</span>
+                    <span className="font-mono text-foreground">{formatNumber(entry.count)}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
+                    <span>{entry.domains[0]?.domain ?? "--"}</span>
+                    <span>{entry.categories[0]?.category ?? "--"}</span>
+                    <span>{entry.topAuthors[0] ? `@${entry.topAuthors[0].author_handle}` : "--"}</span>
+                  </div>
+                </button>
+                {isExpanded && (
+                  <ExpandedRowDetail entry={entry} driftEvents={driftEvents} onNavigate={navigate} />
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+      )}
 
       {/* Pagination */}
       <SimplePagination

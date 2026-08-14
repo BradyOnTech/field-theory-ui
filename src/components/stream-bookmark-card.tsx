@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { Heart, Repeat2, Bookmark, Image, ExternalLink, X, FolderPlus } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Heart, Repeat2, Bookmark, Image, ExternalLink, X, FolderPlus, Link2 } from "lucide-react";
 import type { Bookmark as BookmarkType, CollectionMembership, QuotedTweetSnapshot } from "@/lib/types";
 import { parseTwitterDate, timeAgo, formatNumber, tweetUrl } from "@/lib/utils";
 import { formatTweetText } from "@/lib/tweet-text";
@@ -44,6 +44,18 @@ function parseQuotedTweet(json: string): QuotedTweetSnapshot | null {
   }
 }
 
+function firstImageUrl(links: LinkItem[], quotedTweet: QuotedTweetSnapshot | null): string | null {
+  const candidates = [
+    ...links.map((link) => link.url),
+    ...(quotedTweet?.media ?? []),
+  ];
+  for (const url of candidates) {
+    if (/\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(url)) return url;
+    if (url.includes("pbs.twimg.com") || url.includes("ton.twitter.com")) return url;
+  }
+  return null;
+}
+
 function EngagementStat({
   icon: Icon,
   value,
@@ -74,16 +86,17 @@ export function BookmarkCard({
   expandedRef?: React.RefObject<HTMLDivElement | null>;
   onToggle: () => void;
 }) {
+  const navigate = useNavigate();
   const [memberships, setMemberships] = useState<CollectionMembership[]>(
     bookmark.collections ?? [],
   );
   const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [textExpanded, setTextExpanded] = useState(isExpanded);
   const bookmarkIdStr = String(bookmark.id);
+  const isDetail = isExpanded;
 
-  // Lazy-load memberships the first time the card is expanded. Cached by api-cache
-  // so repeat expansions don't refetch.
   useEffect(() => {
-    if (!isExpanded) return;
+    if (!isPickerOpen && !isDetail) return;
     if (bookmark.collections) return;
     let cancelled = false;
     void fetchBookmark(bookmarkIdStr)
@@ -97,7 +110,7 @@ export function BookmarkCard({
     return () => {
       cancelled = true;
     };
-  }, [isExpanded, bookmark.collections, bookmarkIdStr]);
+  }, [isPickerOpen, isDetail, bookmark.collections, bookmarkIdStr]);
 
   const date = parseTwitterDate(bookmark.posted_at);
   const relativeTime = date ? timeAgo(date) : "";
@@ -112,36 +125,45 @@ export function BookmarkCard({
   const bookmarkedTime = bookmarkedDate && !isNaN(bookmarkedDate.getTime()) ? timeAgo(bookmarkedDate) : "";
   const links = parseLinksJson(bookmark.links_json);
   const quotedTweet = parseQuotedTweet(bookmark.quoted_tweet_json);
+  const previewImage = firstImageUrl(links, quotedTweet);
   const openInXUrl = tweetUrl(bookmark.author_handle, bookmark.tweet_id);
+  const showMore = !isDetail && !textExpanded && bookmark.text.length > 220;
+
+  const handleCardActivate = () => {
+    if (isDetail) {
+      onToggle();
+      return;
+    }
+    navigate(`/bookmarks/${encodeURIComponent(bookmarkIdStr)}`);
+  };
 
   return (
     <div
       ref={expandedRef}
       data-testid="bookmark-card"
       {...(isExpanded ? { "data-expanded-card": "true" } : {})}
-      className={`rounded-card border bg-card p-5 transition-all cursor-pointer hover:border-[#333] ${
+      className={`rounded-card border bg-card p-4 md:p-5 transition-all cursor-pointer hover:border-[#333] ${
         isSelected
           ? "border-foreground/30 bg-foreground/5 ring-2 ring-foreground/20"
           : "border-border"
       } ${isExpanded ? "ring-1 ring-foreground/20" : ""}`}
-      onClick={onToggle}
-      role="button"
+      onClick={handleCardActivate}
+      role={isDetail ? "button" : "link"}
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onToggle();
+          handleCardActivate();
         }
       }}
     >
-      {/* Header: Avatar + Handle + Time */}
       <div className="flex items-start gap-3">
         <AvatarImage
           src={bookmark.author_profile_image_url}
           name={bookmark.author_name}
         />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <Link
               to={`/people/${encodeURIComponent(bookmark.author_handle)}`}
               className="min-h-[44px] inline-flex items-center text-sm font-semibold text-foreground hover:underline"
@@ -159,12 +181,31 @@ export function BookmarkCard({
             )}
           </div>
 
-          {/* Text content */}
-          <p className="mt-1.5 text-sm text-body leading-relaxed whitespace-pre-wrap">
+          <p className={`mt-1.5 text-sm text-body leading-relaxed whitespace-pre-wrap ${textExpanded || isDetail ? "" : "line-clamp-5"}`}>
             {formatTweetText(bookmark.text)}
           </p>
+          {showMore && (
+            <button
+              type="button"
+              className="mt-1 text-xs font-medium text-muted hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                setTextExpanded(true);
+              }}
+            >
+              More
+            </button>
+          )}
 
-          {/* Links from links_json */}
+          {previewImage && (
+            <img
+              src={previewImage}
+              alt=""
+              className="mt-3 max-h-52 w-full rounded-button border border-border object-cover"
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
+
           {links.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-2">
               {links.map((link, i) => (
@@ -183,7 +224,6 @@ export function BookmarkCard({
             </div>
           )}
 
-          {/* Quoted tweet */}
           {quotedTweet && (
             <div className="mt-5 mb-4">
               <p className="mb-1.5 text-xs text-muted">Quoted tweet</p>
@@ -212,7 +252,6 @@ export function BookmarkCard({
             </div>
           )}
 
-          {/* Badges */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {bookmark.primary_category && (
               <Link
@@ -250,62 +289,66 @@ export function BookmarkCard({
             )}
           </div>
 
-          {/* Engagement Stats */}
           <div className="mt-3 flex items-center gap-4">
             <EngagementStat icon={Heart} value={bookmark.like_count} label="Likes" />
             <EngagementStat icon={Repeat2} value={bookmark.repost_count} label="Reposts" />
             <EngagementStat icon={Bookmark} value={bookmark.bookmark_count} label="Bookmarks" />
-
           </div>
 
-          {/* Expanded section: Collections + Open in X */}
-          {isExpanded && (
-            <div className="mt-3 border-t border-border pt-3" onClick={(e) => e.stopPropagation()}>
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className="text-xs text-muted">Collections</span>
-                {memberships.map((m) => (
-                  <Link
-                    key={m.slug}
-                    to={`/collections/${encodeURIComponent(m.slug)}`}
-                    className="rounded-badge border border-border px-2 py-0.5 text-xs text-foreground transition-colors hover:border-[#444]"
-                    style={m.color ? { backgroundColor: `${m.color}22`, borderColor: `${m.color}55` } : undefined}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {m.name}
-                  </Link>
-                ))}
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setIsPickerOpen((o) => !o)}
-                    className="flex items-center gap-1 rounded-badge border border-dashed border-border px-2 py-0.5 text-xs text-muted transition-colors hover:border-[#444] hover:text-foreground"
-                  >
-                    <FolderPlus className="h-3 w-3" />
-                    {memberships.length === 0 ? "Add to collection" : "Edit"}
-                  </button>
-                  {isPickerOpen && (
-                    <CollectionPicker
-                      bookmarkId={bookmarkIdStr}
-                      initialMemberships={memberships}
-                      onClose={() => setIsPickerOpen(false)}
-                      onMembershipsChange={setMemberships}
-                    />
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <a
-                  href={openInXUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex min-h-[44px] items-center gap-1.5 rounded-button border border-border px-3 py-2 text-sm text-foreground hover:bg-surface active:bg-[#252528] transition-colors"
+          <div className="mt-3 border-t border-border pt-3" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted">Collections</span>
+              {memberships.map((m) => (
+                <Link
+                  key={m.slug}
+                  to={`/collections/${encodeURIComponent(m.slug)}`}
+                  className="rounded-badge border border-border px-2 py-0.5 text-xs text-foreground transition-colors hover:border-[#444]"
+                  style={m.color ? { backgroundColor: `${m.color}22`, borderColor: `${m.color}55` } : undefined}
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <X className="h-4 w-4" />
-                  Open in X
-                </a>
+                  {m.name}
+                </Link>
+              ))}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsPickerOpen((o) => !o)}
+                  className="flex min-h-[44px] items-center gap-1 rounded-badge border border-dashed border-border px-2 py-0.5 text-xs text-muted transition-colors hover:border-[#444] hover:text-foreground"
+                >
+                  <FolderPlus className="h-3 w-3" />
+                  {memberships.length === 0 ? "Add to collection" : "Edit"}
+                </button>
+                {isPickerOpen && (
+                  <CollectionPicker
+                    bookmarkId={bookmarkIdStr}
+                    initialMemberships={memberships}
+                    onClose={() => setIsPickerOpen(false)}
+                    onMembershipsChange={setMemberships}
+                  />
+                )}
               </div>
             </div>
-          )}
+            <div className="flex flex-wrap items-center gap-3">
+              {!isDetail && (
+                <Link
+                  to={`/bookmarks/${encodeURIComponent(bookmarkIdStr)}`}
+                  className="flex min-h-[44px] items-center gap-1.5 rounded-button border border-border px-3 py-2 text-sm text-foreground hover:bg-surface active:bg-[#252528] transition-colors"
+                >
+                  <Link2 className="h-4 w-4" />
+                  Permalink
+                </Link>
+              )}
+              <a
+                href={openInXUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex min-h-[44px] items-center gap-1.5 rounded-button border border-border px-3 py-2 text-sm text-foreground hover:bg-surface active:bg-[#252528] transition-colors"
+              >
+                <X className="h-4 w-4" />
+                Open in X
+              </a>
+            </div>
+          </div>
         </div>
       </div>
     </div>

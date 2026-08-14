@@ -28,12 +28,12 @@ export function HorizontalBarRow({
           <button
             type="button"
             onClick={onClick}
-            className="w-28 shrink-0 cursor-pointer truncate text-left text-sm text-muted transition-colors hover:text-foreground"
+            className="w-20 shrink-0 cursor-pointer truncate text-left text-sm text-muted transition-colors hover:text-foreground sm:w-28"
           >
             {label}
           </button>
         ) : (
-          <span className="w-28 shrink-0 truncate text-sm text-muted">{label}</span>
+          <span className="w-20 shrink-0 truncate text-sm text-muted sm:w-28">{label}</span>
         )}
         <div className="flex flex-1 items-center gap-2">
           <div className="h-5 flex-1 rounded bg-border/30">
@@ -57,7 +57,7 @@ export function HorizontalBarRow({
       onClick={() => onClick?.()}
       className="flex min-h-[44px] items-center gap-3 text-left hover:opacity-80 active:opacity-70 transition-opacity"
     >
-      <span className="w-24 shrink-0 truncate text-sm text-foreground">
+      <span className="w-20 shrink-0 truncate text-sm text-foreground sm:w-24">
         {label}
       </span>
       <div className="flex-1">

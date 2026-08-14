@@ -10,7 +10,7 @@ const SHORTCUT_GROUPS: { title: string; shortcuts: ShortcutItem[] }[] = [
   {
     title: "Navigation",
     shortcuts: [
-      { keys: ["1–7"], description: "Switch between views" },
+      { keys: ["1–8"], description: "Switch between views" },
       { keys: ["/"], description: "Focus search input" },
       { keys: ["Esc"], description: "Close overlay / go back" },
     ],
@@ -39,6 +39,7 @@ const VIEW_MAP = [
   { key: "5", name: "Chronos" },
   { key: "6", name: "Forge" },
   { key: "7", name: "Mirror" },
+  { key: "8", name: "Collections" },
 ];
 
 export function KeyboardHelpOverlay({
@@ -71,7 +72,7 @@ export function KeyboardHelpOverlay({
       <div
         role="dialog"
         aria-label="Keyboard shortcuts"
-        className="relative z-10 mx-4 w-full max-w-lg rounded-card border border-border bg-card p-6 shadow-2xl"
+        className="relative z-10 mx-4 max-h-[min(90dvh,40rem)] w-full max-w-lg overflow-y-auto rounded-card border border-border bg-card p-6 shadow-2xl"
       >
         {/* Header */}
         <div className="mb-6 flex items-center gap-3">
@@ -143,7 +144,7 @@ export function KeyboardHelpOverlay({
         </div>
 
         {/* Footer */}
-        <div className="mt-6 border-t border-border pt-4 text-center text-xs text-disabled">
+        <div className="mt-6 hidden border-t border-border pt-4 text-center text-xs text-disabled lg:block">
           Shortcuts are disabled when typing in input fields
         </div>
       </div>

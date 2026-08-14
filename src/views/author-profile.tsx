@@ -62,7 +62,7 @@ export function AuthorProfileView() {
 
   if (loading) {
     return (
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <button
           type="button"
           onClick={handleBack}
@@ -73,7 +73,7 @@ export function AuthorProfileView() {
         </button>
 
         {/* Author Header Skeleton */}
-        <div className="mb-8 flex items-center gap-5 rounded-card border border-border bg-card p-6">
+        <div className="mb-8 flex flex-col items-start gap-4 rounded-card border border-border bg-card p-4 sm:flex-row sm:items-center sm:gap-5 md:p-6">
           <Skeleton className="h-20 w-20 shrink-0 rounded-full" />
           <div className="flex flex-col gap-1">
             <Skeleton className="h-7 w-48" />
@@ -188,7 +188,7 @@ export function AuthorProfileView() {
 
   if (error || !profile) {
     return (
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <button
           type="button"
           onClick={handleBack}
@@ -211,7 +211,7 @@ export function AuthorProfileView() {
   const maxDomainCount = profile.domains[0]?.count ?? 0;
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       {/* Back navigation */}
       <button
         type="button"
@@ -226,26 +226,26 @@ export function AuthorProfileView() {
       {/* Author Header */}
       <div
         data-testid="author-header"
-        className="mb-8 flex items-center gap-5 rounded-card border border-border bg-card p-6"
+        className="mb-8 flex flex-col items-start gap-4 rounded-card border border-border bg-card p-4 sm:flex-row sm:items-center sm:gap-5 md:p-6"
       >
         <AvatarImage
           src={profile.author_profile_image_url}
           name={profile.author_name || profile.author_handle}
-          className="h-20 w-20"
+          className="h-16 w-16 sm:h-20 sm:w-20"
         />
-        <div className="flex flex-col gap-1">
+        <div className="flex min-w-0 flex-col gap-1">
           <h1 className="text-2xl font-bold text-foreground">
             {profile.author_name || profile.author_handle}
           </h1>
           <span className="text-sm text-foreground">@{profile.author_handle}</span>
-          <div className="mt-1 flex items-center gap-4">
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">
             <span className="font-mono text-lg font-bold text-foreground">
               {formatNumber(profile.bookmarkCount)}
             </span>
             <span className="text-sm text-muted">bookmarks</span>
             <Link
               to={`/stream?author=${encodeURIComponent(profile.author_handle)}`}
-              className="ml-2 min-h-[44px] inline-flex items-center rounded-button border border-border px-3 py-1.5 text-xs text-muted hover:border-[#333] hover:text-foreground transition-colors"
+              className="min-h-[44px] inline-flex items-center rounded-button border border-border px-3 py-1.5 text-xs text-muted hover:border-[#333] hover:text-foreground transition-colors"
             >
               View in Stream →
             </Link>
@@ -253,7 +253,7 @@ export function AuthorProfileView() {
           {/* First/Last bookmark dates */}
           <div
             data-testid="bookmark-dates"
-            className="mt-2 flex items-center gap-4 text-xs text-muted"
+            className="mt-2 flex flex-wrap items-center gap-4 text-xs text-muted"
           >
             <div className="flex items-center gap-1">
               <Calendar className="h-3 w-3" />

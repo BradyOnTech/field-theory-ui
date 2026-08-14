@@ -8,7 +8,7 @@ import {
   Tooltip,
   CartesianGrid,
 } from "recharts";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   fetchStats,
   fetchTimeline,
@@ -23,15 +23,14 @@ import type {
   DomainCount,
   Bookmark,
 } from "@/lib/types";
-import { Heart, Repeat2, Bookmark as BookmarkIcon, Info, RefreshCw } from "lucide-react";
-import { formatNumber, parseTwitterDate, timeAgo, tweetUrl } from "@/lib/utils";
+import { Heart, Repeat2, Bookmark as BookmarkIcon, Info } from "lucide-react";
+import { formatNumber, parseTwitterDate, timeAgo } from "@/lib/utils";
 import { formatTweetText } from "@/lib/tweet-text";
 import { AvatarImage } from "@/components/avatar-image";
 import { Skeleton } from "@/components/skeleton";
 import { SparklineTooltip } from "@/components/sparkline-tooltip";
 import { HorizontalBarRow } from "@/components/horizontal-bar-row";
 import { ErrorRetry } from "@/components/error-retry";
-import { SyncDialog } from "@/components/sync-dialog";
 
 const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
@@ -115,6 +114,7 @@ function KpiCard({ label, value, subLabel, tooltip, hideOnMobile }: KpiData) {
             ref={iconRef}
             onMouseEnter={() => setShowTip(true)}
             onMouseLeave={() => setShowTip(false)}
+            onClick={() => setShowTip((open) => !open)}
             className="cursor-help text-disabled transition-colors hover:text-muted"
           >
             <Info className="h-3 w-3" />
@@ -157,7 +157,6 @@ export function ObservatoryView() {
   const [recent, setRecent] = useState<Bookmark[]>([]);
   const [lastSynced, setLastSynced] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
-  const [isSyncOpen, setIsSyncOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -207,9 +206,9 @@ export function ObservatoryView() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       {/* Header with Last Synced */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Observatory</h1>
           <p className="mt-1 text-sm text-muted">
@@ -217,20 +216,11 @@ export function ObservatoryView() {
           </p>
         </div>
         {lastSynced && (
-          <>
-            <span className="hidden text-xs text-disabled lg:inline">
-              Last synced: {new Date(lastSynced).toLocaleString()}
-            </span>
-            <button
-              type="button"
-              onClick={() => setIsSyncOpen(true)}
-              className="flex items-center gap-1.5 rounded-button border border-border px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-[#333] hover:text-foreground lg:hidden"
-            >
-              <RefreshCw className="h-3 w-3" />
-              Sync
-              <span className="text-disabled">· {timeAgo(new Date(lastSynced))}</span>
-            </button>
-          </>
+          <span className="text-right text-xs text-disabled">
+            Last synced:{" "}
+            <span className="hidden lg:inline">{new Date(lastSynced).toLocaleString()}</span>
+            <span className="lg:hidden">{timeAgo(new Date(lastSynced))}</span>
+          </span>
         )}
       </div>
 
@@ -263,7 +253,7 @@ export function ObservatoryView() {
         <h2 className="mb-4 text-lg font-semibold text-foreground">
           Activity (90 days)
         </h2>
-        <div className="h-48">
+        <div className="h-36 md:h-48">
           {timeline.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={timeline}>
@@ -381,11 +371,9 @@ export function ObservatoryView() {
               const date = parseTwitterDate(bookmark.posted_at);
               const relativeTime = date ? timeAgo(date) : "";
               return (
-                <a
+                <Link
                   key={bookmark.id}
-                  href={tweetUrl(bookmark.author_handle, bookmark.tweet_id)}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  to={`/bookmarks/${encodeURIComponent(String(bookmark.id))}`}
                   className="flex gap-3 border-b border-border pb-4 last:border-0 last:pb-0 transition-colors hover:bg-[#0d0d0d] rounded-button -mx-2 px-2 pt-2"
                 >
                   <AvatarImage
@@ -454,7 +442,7 @@ export function ObservatoryView() {
                       </span>
                     </div>
                   </div>
-                </a>
+                </Link>
               );
             })}
           </div>
@@ -478,9 +466,6 @@ export function ObservatoryView() {
         )}
       </div>
 
-      {isSyncOpen && (
-        <SyncDialog onClose={() => setIsSyncOpen(false)} />
-      )}
     </div>
   );
 }

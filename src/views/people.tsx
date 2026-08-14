@@ -18,13 +18,11 @@ function AuthorCard({
   isSelected,
   onClick,
   onDomainClick,
-  onViewBookmarks,
 }: {
   author: Author;
   isSelected?: boolean;
   onClick: () => void;
   onDomainClick?: (domain: string) => void;
-  onViewBookmarks?: () => void;
 }) {
   return (
     <div
@@ -63,31 +61,18 @@ function AuthorCard({
         </span>
         <span className="text-xs text-disabled">bookmarks</span>
       </div>
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        {author.primary_domain && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDomainClick?.(author.primary_domain);
-            }}
-            className="rounded-badge border border-border bg-card px-2 py-0.5 text-xs text-muted hover:border-[#333] hover:text-foreground transition-colors"
-          >
-            {author.primary_domain}
-          </button>
-        )}
+      {author.primary_domain && (
         <button
           type="button"
-          data-testid="view-bookmarks-btn"
           onClick={(e) => {
             e.stopPropagation();
-            onViewBookmarks?.();
+            onDomainClick?.(author.primary_domain);
           }}
-          className="min-h-[44px] rounded-button border border-border bg-card px-3 py-2 text-xs text-muted hover:border-[#333] hover:text-foreground transition-colors"
+          className="rounded-badge border border-border bg-card px-2 py-0.5 text-xs text-muted hover:border-[#333] hover:text-foreground transition-colors"
         >
-          View bookmarks
+          {author.primary_domain}
         </button>
-      </div>
+      )}
     </div>
   );
 }
@@ -109,12 +94,7 @@ function AuthorCardSkeleton() {
         {/* "bookmarks" label */}
         <Skeleton className="h-3 w-16" />
       </div>
-      <div className="flex items-center gap-2">
-        {/* Domain badge */}
-        <Skeleton className="h-5 w-12 rounded-badge" />
-        {/* View bookmarks button */}
-        <Skeleton className="h-[44px] w-28 rounded-button" />
-      </div>
+      <Skeleton className="h-5 w-12 rounded-badge" />
     </div>
   );
 }
@@ -194,7 +174,7 @@ export function PeopleView() {
       }
       setSearchParams(next, { replace: true });
       // Scroll to top of grid
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      document.querySelector("main")?.scrollTo({ top: 0, behavior: "smooth" });
     },
     [totalPages, searchParams, setSearchParams],
   );
@@ -209,13 +189,6 @@ export function PeopleView() {
   const handleDomainClick = useCallback(
     (domain: string) => {
       navigate(`/stream?domain=${encodeURIComponent(domain)}`);
-    },
-    [navigate],
-  );
-
-  const handleViewBookmarks = useCallback(
-    (authorHandle: string) => {
-      navigate(`/stream?author=${encodeURIComponent(authorHandle)}`);
     },
     [navigate],
   );
@@ -242,32 +215,32 @@ export function PeopleView() {
   }
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">People</h1>
-          <p className="mt-1 text-sm text-muted">
-            {filteredAuthors.length} authors
-            {searchQuery && ` matching "${searchQuery}"`}
-          </p>
+    <div className="p-4 md:p-6">
+      <div className="sticky top-0 z-10 -mx-4 mb-6 bg-background px-4 pb-4 md:-mx-6 md:px-6">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">People</h1>
+            <p className="mt-1 text-sm text-muted">
+              {filteredAuthors.length} authors
+              {searchQuery && ` matching "${searchQuery}"`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-disabled">
+            <Users className="h-4 w-4" />
+            <span className="font-mono">{formatNumber(authors.length)} total</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-sm text-disabled">
-          <Users className="h-4 w-4" />
-          <span className="font-mono">{formatNumber(authors.length)} total</span>
-        </div>
-      </div>
 
-      {/* Search Bar */}
-      <div className="relative mb-6">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-disabled" />
-        <input
-          type="text"
-          placeholder="Search authors by name or handle..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="min-h-[44px] w-full rounded-button border border-border bg-card py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-disabled focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-ring"
-        />
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-disabled" />
+          <input
+            type="text"
+            placeholder="Search authors by name or handle..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="min-h-[44px] w-full rounded-button border border-border bg-card py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-disabled focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
       </div>
 
       {/* Loading Skeleton State */}
@@ -295,7 +268,6 @@ export function PeopleView() {
                 isSelected={index === selectedIndex}
                 onClick={() => handleAuthorClick(author.author_handle)}
                 onDomainClick={handleDomainClick}
-                onViewBookmarks={() => handleViewBookmarks(author.author_handle)}
               />
             ))}
           </div>

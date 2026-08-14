@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Plus, Loader2 } from "lucide-react";
 import { useCollections } from "@/lib/use-collections";
 import type { CollectionMembership } from "@/lib/types";
+import { useIsLg } from "@/lib/use-media-query";
+import { BottomSheet } from "@/components/bottom-sheet";
 
 interface CollectionPickerProps {
   bookmarkId: string;
@@ -24,9 +26,10 @@ export function CollectionPicker({
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const newInputRef = useRef<HTMLInputElement>(null);
+  const isLg = useIsLg();
 
-  // Close on outside click / Esc
   useEffect(() => {
+    if (!isLg) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         onClose();
@@ -41,7 +44,7 @@ export function CollectionPicker({
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [onClose]);
+  }, [onClose, isLg]);
 
   const updateMemberships = (next: CollectionMembership[]) => {
     setMemberships(next);
@@ -100,18 +103,9 @@ export function CollectionPicker({
 
   const memberSlugs = new Set(memberships.map((m) => m.slug));
 
-  return (
-    <div
-      ref={containerRef}
-      className="absolute left-0 top-full z-40 mt-2 w-72 rounded-card border border-border bg-card shadow-lg"
-      onClick={(e) => e.stopPropagation()}
-      role="dialog"
-    >
-      <div className="border-b border-border px-3 py-2 text-xs font-medium text-muted">
-        Add to collection
-      </div>
-
-      <div className="max-h-64 overflow-y-auto py-1">
+  const body = (
+    <>
+      <div className={isLg ? "max-h-64 overflow-y-auto py-1" : "flex flex-col gap-1"}>
         {isLoading && collections.length === 0 && (
           <div className="flex items-center justify-center py-4 text-xs text-muted">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -131,7 +125,7 @@ export function CollectionPicker({
               type="button"
               disabled={isPending}
               onClick={() => void handleToggle(c.slug, c.name, c.color || "")}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface disabled:opacity-60"
+              className="flex min-h-[44px] w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-surface disabled:opacity-60"
             >
               <span
                 className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border"
@@ -150,7 +144,7 @@ export function CollectionPicker({
         })}
       </div>
 
-      <form onSubmit={(e) => void handleCreate(e)} className="border-t border-border p-2">
+      <form onSubmit={(e) => void handleCreate(e)} className={isLg ? "border-t border-border p-2" : "mt-3 border-t border-border pt-3"}>
         <div className="flex items-center gap-1.5">
           <Plus className="h-3.5 w-3.5 shrink-0 text-muted" />
           <input
@@ -160,12 +154,12 @@ export function CollectionPicker({
             onChange={(e) => setNewName(e.target.value)}
             placeholder="New collection…"
             disabled={isCreating}
-            className="flex-1 rounded-button bg-background px-2 py-1.5 text-sm text-foreground placeholder:text-disabled focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
+            className="min-h-[44px] flex-1 rounded-button bg-background px-2 py-1.5 text-sm text-foreground placeholder:text-disabled focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
           />
           <button
             type="submit"
             disabled={!newName.trim() || isCreating}
-            className="rounded-button border border-border px-2 py-1.5 text-xs text-foreground transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-[44px] rounded-button border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isCreating ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create"}
           </button>
@@ -175,6 +169,28 @@ export function CollectionPicker({
       {error && (
         <div className="border-t border-border px-3 py-2 text-xs text-red-400">{error}</div>
       )}
+    </>
+  );
+
+  if (!isLg) {
+    return (
+      <BottomSheet title="Add to collection" onClose={onClose}>
+        {body}
+      </BottomSheet>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="absolute left-0 top-full z-40 mt-2 w-72 rounded-card border border-border bg-card shadow-lg"
+      onClick={(e) => e.stopPropagation()}
+      role="dialog"
+    >
+      <div className="border-b border-border px-3 py-2 text-xs font-medium text-muted">
+        Add to collection
+      </div>
+      {body}
     </div>
   );
 }

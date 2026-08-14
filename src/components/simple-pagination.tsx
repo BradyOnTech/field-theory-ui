@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useIsMd } from "@/lib/use-media-query";
 
 interface SimplePaginationProps {
   /** Current page (1-indexed) */
@@ -114,9 +115,11 @@ export function SimplePagination({
   onPageChange,
   variant = "simple",
 }: SimplePaginationProps) {
+  const isMd = useIsMd();
+
   if (totalPages <= 1) return null;
 
-  if (variant === "numbered") {
+  if (variant === "numbered" && isMd) {
     return (
       <div className="mt-4">
         <NumberedPagination

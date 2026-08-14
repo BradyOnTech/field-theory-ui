@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, useLocation, Outlet } from "react-router-dom";
 import {
   Telescope,
   Radio,
@@ -12,6 +12,7 @@ import {
   Github,
   Keyboard,
   RefreshCw,
+  MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useKeyboardShortcuts } from "@/lib/use-keyboard-shortcuts";
@@ -19,6 +20,7 @@ import { KeyboardHelpOverlay } from "@/components/keyboard-help-overlay";
 import { SyncDialog } from "@/components/sync-dialog";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { AppHeader } from "@/components/app-header";
+import { BottomSheet } from "@/components/bottom-sheet";
 
 interface NavItem {
   to: string;
@@ -38,16 +40,35 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/collections", label: "Collections", icon: FolderOpen, shortcut: "8" },
 ];
 
+const PRIMARY_TABS = NAV_ITEMS.filter((item) =>
+  ["/stream", "/oracle", "/people", "/collections"].includes(item.to),
+);
+
+const MORE_ITEMS = NAV_ITEMS.filter((item) =>
+  ["/", "/chronos", "/forge", "/mirror"].includes(item.to),
+);
+
+function isMoreRoute(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    pathname.startsWith("/chronos") ||
+    pathname.startsWith("/forge") ||
+    pathname.startsWith("/mirror")
+  );
+}
+
 export function Layout() {
   const { isHelpOpen, setIsHelpOpen } = useKeyboardShortcuts();
   const [isSyncOpen, setIsSyncOpen] = useState(false);
+  const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const location = useLocation();
+  const moreActive = isMoreRoute(location.pathname);
 
   return (
-    <div className="flex h-screen flex-col bg-background">
-      {/* Top header — visible on lg+ */}
-      <AppHeader />
+    <div className="flex h-dvh flex-col bg-background">
+      <AppHeader onSync={() => setIsSyncOpen(true)} />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
       {/* Sidebar — visible on lg+ (1024px+) */}
       <nav className="hidden w-56 flex-col border-r border-border bg-card lg:flex">
         <div className="flex flex-1 flex-col gap-1 p-2">
@@ -121,24 +142,21 @@ export function Layout() {
         </div>
       </nav>
 
-      {/* Main content — full width on mobile/tablet, with sidebar space on lg+ */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden pb-16 lg:pb-0">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0">
         <ErrorBoundary>
           <Outlet />
         </ErrorBoundary>
       </main>
       </div>
 
-      {/* Bottom navigation — visible on < lg (below 1024px) */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-border bg-background lg:hidden">
-        {NAV_ITEMS.map((item) => (
+      <nav className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-border bg-background pb-[env(safe-area-inset-bottom)] lg:hidden">
+        {PRIMARY_TABS.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
-            end={item.to === "/"}
             className={({ isActive }) =>
               cn(
-                "flex min-h-[48px] flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-xs transition-colors",
+                "flex min-h-[48px] flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-[10px] leading-tight transition-colors",
                 isActive
                   ? "text-foreground"
                   : "text-muted",
@@ -146,17 +164,64 @@ export function Layout() {
             }
           >
             <item.icon className="h-5 w-5" />
-            <span className="truncate">{item.label}</span>
+            <span className="truncate px-0.5">{item.label}</span>
           </NavLink>
         ))}
+        <button
+          type="button"
+          onClick={() => setIsMoreOpen(true)}
+          className={cn(
+            "flex min-h-[48px] flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-[10px] leading-tight transition-colors",
+            moreActive ? "text-foreground" : "text-muted",
+          )}
+          aria-label="More"
+        >
+          <MoreHorizontal className="h-5 w-5" />
+          <span>More</span>
+        </button>
       </nav>
 
-      {/* Keyboard shortcuts help overlay */}
+      {isMoreOpen && (
+        <BottomSheet title="More" onClose={() => setIsMoreOpen(false)}>
+          <div className="flex flex-col gap-1 pb-2">
+            {MORE_ITEMS.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === "/"}
+                onClick={() => setIsMoreOpen(false)}
+                className={({ isActive }) =>
+                  cn(
+                    "flex min-h-[48px] items-center gap-3 rounded-button px-3 py-2 text-sm transition-colors",
+                    isActive
+                      ? "bg-surface text-foreground"
+                      : "text-muted hover:bg-surface hover:text-foreground",
+                  )
+                }
+              >
+                <item.icon className="h-4 w-4" />
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setIsMoreOpen(false);
+                setIsSyncOpen(true);
+              }}
+              className="flex min-h-[48px] items-center gap-3 rounded-button px-3 py-2 text-sm text-muted transition-colors hover:bg-surface hover:text-foreground"
+            >
+              <RefreshCw className="h-4 w-4" />
+              <span>Sync bookmarks</span>
+            </button>
+          </div>
+        </BottomSheet>
+      )}
+
       {isHelpOpen && (
         <KeyboardHelpOverlay onClose={() => setIsHelpOpen(false)} />
       )}
 
-      {/* Sync & Classify dialog */}
       {isSyncOpen && (
         <SyncDialog onClose={() => setIsSyncOpen(false)} />
       )}

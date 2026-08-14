@@ -50,7 +50,7 @@ function CollectionsIndex() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-border bg-background p-6 pb-4">
+      <div className="shrink-0 border-b border-border bg-background p-4 pb-4 md:p-6 md:pb-4">
         <h1 className="text-2xl font-bold text-foreground">Collections</h1>
         <p className="mt-1 text-sm text-muted">
           Group bookmarks across categories and domains for a specific project or theme.
@@ -78,7 +78,7 @@ function CollectionsIndex() {
         {createError && <p className="mt-2 text-xs text-red-400">{createError}</p>}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-6">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
         {error && <ErrorRetry message={error} onRetry={() => window.location.reload()} />}
 
         {!error && isLoading && collections.length === 0 && (
@@ -130,8 +130,9 @@ function CollectionsIndex() {
                 <button
                   type="button"
                   onClick={() => void handleDelete(c.slug, c.name)}
-                  className="absolute right-2 top-2 rounded-button p-1.5 text-disabled opacity-0 transition-opacity hover:bg-surface hover:text-red-400 group-hover:opacity-100"
+                  className="absolute right-2 top-2 rounded-button p-2 text-disabled transition-colors hover:bg-surface hover:text-red-400"
                   title="Delete collection"
+                  aria-label={`Delete ${c.name}`}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -188,11 +189,11 @@ function CollectionDetailView({ slug }: { slug: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-border bg-background p-6 pb-4">
+      <div className="shrink-0 border-b border-border bg-background p-4 pb-4 md:p-6 md:pb-4">
         <button
           type="button"
           onClick={() => navigate("/collections")}
-          className="mb-3 flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-foreground"
+          className="mb-3 flex min-h-[44px] items-center gap-1.5 text-xs text-muted transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3 w-3" /> All collections
         </button>
@@ -211,7 +212,7 @@ function CollectionDetailView({ slug }: { slug: string }) {
         )}
       </div>
 
-      <div ref={listContainerRef} className="min-h-0 flex-1 overflow-y-auto p-6">
+      <div ref={listContainerRef} className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
         {error && <ErrorRetry message={error} onRetry={() => void load()} />}
         {!error && isLoading && (
           <div className="flex items-center gap-2 text-sm text-muted">
