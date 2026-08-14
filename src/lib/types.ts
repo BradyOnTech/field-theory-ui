@@ -30,7 +30,6 @@ export interface Bookmark {
   quoted_tweet_json: string;
   tags_json: string;
   ingested_via: string;
-  // Only populated by /api/bookmark/:id (detail). Absent on list responses.
   collections?: CollectionMembership[];
 }
 
@@ -109,6 +108,9 @@ export type SortKey =
   | "reposts_desc"
   | "bookmark_count_desc"
   | "relevance";
+
+/** Reserved Stream/search `collection` value: bookmarks in no collection. */
+export const UNCOLLECTED_COLLECTION_FILTER = "__none__";
 
 export interface SearchParams {
   q?: string;

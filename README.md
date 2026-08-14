@@ -234,7 +234,7 @@ All endpoints return JSON. Cross-origin browser access is disabled unless `CORS_
 | ------------------------------------------------------------------------ | --------------------------------------------- |
 | `GET /api/stats`                                                         | Aggregate counts, date range, this-week total |
 | `GET /api/recent?limit=N`                                                | Most recent bookmarks                         |
-| `GET /api/search?q=&author=&category=&domain=&after=&before=&limit=&offset=` | Full-text search with filters            |
+| `GET /api/search?q=&author=&category=&domain=&collection=&after=&before=&limit=&offset=` | Full-text search with filters (`collection=__none__` = uncollected) |
 | `GET /api/categories`                                                    | Category distribution                         |
 | `GET /api/domains`                                                       | Domain distribution                           |
 | `GET /api/timeline?days=N`                                               | Daily bookmark counts                         |

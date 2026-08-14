@@ -57,6 +57,7 @@ const mockBookmarks = [
     quoted_tweet_json: "",
     tags_json: "",
     ingested_via: "graphql",
+    collections: [{ slug: "ai-tools", name: "AI Tools", color: "" }],
   },
   {
     id: 2,
@@ -91,6 +92,7 @@ const mockBookmarks = [
     quoted_tweet_json: "",
     tags_json: "",
     ingested_via: "graphql",
+    collections: [],
   },
   {
     id: 3,
@@ -125,6 +127,7 @@ const mockBookmarks = [
     quoted_tweet_json: "",
     tags_json: "",
     ingested_via: "graphql",
+    collections: [],
   },
 ];
 
@@ -268,6 +271,23 @@ describe("StreamView", () => {
       expect(domainSelect).toBeInTheDocument();
     });
 
+    it("can filter to bookmarks not in any collection", async () => {
+      renderStream();
+      await openFilters();
+
+      const collectionSelect = screen.getByLabelText(/collection/i);
+      expect(screen.getByRole("option", { name: /not in a collection/i })).toBeInTheDocument();
+
+      fireEvent.change(collectionSelect, { target: { value: "__none__" } });
+
+      await waitFor(() => {
+        expect(fetchSearch).toHaveBeenCalledWith(
+          expect.objectContaining({ collection: "__none__", offset: 0 }),
+          expect.any(AbortSignal),
+        );
+      });
+    });
+
     it("renders author text input", async () => {
       renderStream();
       await openFilters();
@@ -370,6 +390,17 @@ describe("StreamView", () => {
 
       const authorLink = screen.getByText("@user1");
       expect(authorLink.closest("a")).toHaveAttribute("href", "/people/user1");
+    });
+
+    it("renders persisted collection memberships from the search payload", async () => {
+      renderStream();
+
+      await waitFor(() => {
+        expect(screen.getByText("@user1")).toBeInTheDocument();
+      });
+
+      const card = screen.getByText("@user1").closest("[data-testid='bookmark-card']");
+      expect(card).toHaveTextContent("AI Tools");
     });
 
     it("renders media count indicator when media_count > 0", async () => {
@@ -487,6 +518,28 @@ describe("StreamView", () => {
       expect(screen.getAllByText(/open in x/i).length).toBeGreaterThan(0);
       fireEvent.mouseDown(document.body);
       expect(screen.getAllByText(/open in x/i).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("Scroll chrome", () => {
+    it("hides search and filters while scrolling down, and shows them again on scroll up", async () => {
+      renderStream();
+
+      await waitFor(() => {
+        expect(screen.getByText("@user1")).toBeInTheDocument();
+      });
+
+      const chrome = screen.getByTestId("stream-chrome");
+      const list = screen.getByTestId("stream-list");
+      expect(chrome.className).toContain("translate-y-0");
+
+      Object.defineProperty(list, "scrollTop", { configurable: true, value: 80, writable: true });
+      fireEvent.scroll(list);
+      expect(chrome.className).toContain("-translate-y-full");
+
+      Object.defineProperty(list, "scrollTop", { configurable: true, value: 40, writable: true });
+      fireEvent.scroll(list);
+      expect(chrome.className).toContain("translate-y-0");
     });
   });
 

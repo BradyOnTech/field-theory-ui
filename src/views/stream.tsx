@@ -8,7 +8,7 @@ import { BookmarkCard } from "@/components/stream-bookmark-card";
 import { BottomSheet } from "@/components/bottom-sheet";
 import { useStreamSearch } from "@/lib/use-stream-search";
 import { ErrorRetry } from "@/components/error-retry";
-import type { SortKey } from "@/lib/types";
+import { UNCOLLECTED_COLLECTION_FILTER, type SortKey } from "@/lib/types";
 
 const DATE_PRESETS = [
   { id: "7d", label: "7d", days: 7 },
@@ -65,7 +65,13 @@ export function StreamView() {
   const [searchInput, setSearchInput] = useState(query);
   const [authorInput, setAuthorInput] = useState(authorFilter);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [chromeHidden, setChromeHidden] = useState(false);
+  const [chromeFocused, setChromeFocused] = useState(false);
+  const [chromeHeight, setChromeHeight] = useState(220);
+  const chromeRef = useRef<HTMLDivElement>(null);
+  const lastScrollTopRef = useRef(0);
   const isLg = useIsLg();
+  const keepChromeVisible = filtersOpen || chromeFocused;
 
   const advancedFilterCount = [categoryFilter, domainFilter, collectionFilter, authorFilter, afterFilter, beforeFilter].filter(Boolean).length;
 
@@ -139,6 +145,32 @@ export function StreamView() {
   const hasActiveFilters =
     query || categoryFilter || domainFilter || collectionFilter || authorFilter || afterFilter || beforeFilter;
 
+  useEffect(() => {
+    const chrome = chromeRef.current;
+    if (!chrome || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      const height = entry?.contentRect.height;
+      if (height && height > 0) setChromeHeight(height);
+    });
+    observer.observe(chrome);
+    setChromeHeight(chrome.getBoundingClientRect().height);
+    return () => observer.disconnect();
+  }, [isLg, filtersOpen]);
+
+  const handleListScroll = useCallback(() => {
+    const list = listContainerRef.current;
+    if (!list) return;
+    const scrollTop = list.scrollTop;
+    const delta = scrollTop - lastScrollTopRef.current;
+    lastScrollTopRef.current = scrollTop;
+    if (scrollTop <= 16) {
+      setChromeHidden(false);
+      return;
+    }
+    if (delta > 8) setChromeHidden(true);
+    else if (delta < -8) setChromeHidden(false);
+  }, []);
+
   const sentinelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -205,6 +237,7 @@ export function StreamView() {
           className="min-h-[44px] rounded-button border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-ring"
         >
           <option value="">All collections</option>
+          <option value={UNCOLLECTED_COLLECTION_FILTER}>Not in a collection</option>
           {collections.map((c) => (
             <option key={c.slug} value={c.slug}>
               {c.name} ({c.bookmark_count})
@@ -258,9 +291,23 @@ export function StreamView() {
     </div>
   );
 
+  const hideChrome = chromeHidden && !keepChromeVisible;
+
   return (
-    <div className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-border bg-background p-4 pb-4 md:p-6 md:pb-4">
+    <div className="relative flex h-full flex-col">
+      <div
+        ref={chromeRef}
+        onFocusCapture={() => setChromeFocused(true)}
+        onBlurCapture={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+            setChromeFocused(false);
+          }
+        }}
+        data-testid="stream-chrome"
+        className={`absolute inset-x-0 top-0 z-20 border-b border-border bg-background/95 p-4 pb-4 backdrop-blur-sm transition-transform duration-200 ease-out md:p-6 md:pb-4 ${
+          hideChrome ? "pointer-events-none -translate-y-full" : "translate-y-0"
+        }`}
+      >
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Stream</h1>
@@ -361,7 +408,13 @@ export function StreamView() {
         </BottomSheet>
       )}
 
-      <div ref={listContainerRef} className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 md:px-6 md:pt-6">
+      <div
+        ref={listContainerRef}
+        data-testid="stream-list"
+        onScroll={handleListScroll}
+        className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 md:px-6 md:pb-6"
+      >
+        <div aria-hidden="true" style={{ height: chromeHeight + 16 }} />
         {error && (
           <ErrorRetry message={error} onRetry={retry} />
         )}

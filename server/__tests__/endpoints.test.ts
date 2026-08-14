@@ -359,6 +359,19 @@ describe("GET /api/search", () => {
     }
   });
 
+  it("filters to bookmarks with no collection", async () => {
+    const { status, data } = await fetchJSON<{
+      results: Array<{ collections?: Array<{ slug: string }> }>;
+      total: number;
+    }>("/api/search?collection=__none__&limit=10");
+    expect(status).toBe(200);
+    expect(data.total).toBeGreaterThan(0);
+    expect(data.results.length).toBeGreaterThan(0);
+    for (const result of data.results) {
+      expect(result.collections ?? []).toEqual([]);
+    }
+  });
+
   it("filters by date range", async () => {
     const { data } = await fetchJSON<{
       results: Array<{ posted_at_iso: string }>;

@@ -383,6 +383,7 @@ export interface BookmarkResult {
   quoted_tweet_json: string;
   tags_json: string;
   ingested_via: string;
+  collections?: CollectionMembership[];
 }
 
 export interface CategoryResult {
@@ -509,7 +510,7 @@ export function getRecent(limit = 20): BookmarkResult[] {
     )
     .all(limit) as RawRow[];
 
-  return rows.map(mapBookmarkRow);
+  return attachCollections(rows.map(mapBookmarkRow));
 }
 
 export function getCategories(): CategoryResult[] {
@@ -682,12 +683,15 @@ function buildSortClause(sort: SortKey, prefix = ""): string {
   }
 }
 
+/** Reserved `collection` filter: bookmarks that are not in any collection. */
+export const UNCOLLECTED_COLLECTION_FILTER = "__none__";
+
 interface SearchFilters {
   q?: string;
   author?: string;
   category?: string;
   domain?: string;
-  collection?: string; // collection slug
+  collection?: string; // collection slug, or UNCOLLECTED_COLLECTION_FILTER
   after?: string;
   before?: string;
   sort?: SortKey | string;
@@ -749,7 +753,11 @@ function buildSearchFilters(
     conditions.push(`(',' || ${p}domains || ',') LIKE '%,' || ? || ',%'`);
     values.push(domain);
   }
-  if (collection) {
+  if (collection === UNCOLLECTED_COLLECTION_FILTER) {
+    conditions.push(
+      `${p}id NOT IN (SELECT bc.bookmark_id FROM bookmark_collections bc)`,
+    );
+  } else if (collection) {
     // Subquery against bookmark_collections; slug is user-supplied so bind safely.
     conditions.push(
       `${p}id IN (SELECT bc.bookmark_id FROM bookmark_collections bc
@@ -842,7 +850,7 @@ export function searchBookmarks(filters: SearchFilters): SearchResult {
     const rows = database.prepare(resultsSql).all(sanitized, ...params, limit, offset) as RawRow[];
 
     return {
-      results: rows.map(mapBookmarkRow),
+      results: attachCollections(rows.map(mapBookmarkRow)),
       total,
     };
   }
@@ -878,7 +886,7 @@ function searchBookmarksNoFTS(
   const rows = database.prepare(resultsSql).all(...params, limit, offset) as RawRow[];
 
   return {
-    results: rows.map(mapBookmarkRow),
+    results: attachCollections(rows.map(mapBookmarkRow)),
     total,
   };
 }
@@ -1885,24 +1893,53 @@ export function getBookmarksByCollection(
     )
     .all(collection.id, safeLimit, safeOffset) as RawRow[];
 
-  return { results: rows.map(mapBookmarkRow), total };
+  return { results: attachCollections(rows.map(mapBookmarkRow)), total };
 }
 
 export function getCollectionsForBookmark(bookmarkId: string): CollectionMembership[] {
+  return getCollectionsForBookmarks([bookmarkId]).get(String(bookmarkId)) ?? [];
+}
+
+export function getCollectionsForBookmarks(
+  bookmarkIds: string[],
+): Map<string, CollectionMembership[]> {
+  const memberships = new Map<string, CollectionMembership[]>();
+  const ids = [...new Set(bookmarkIds.map((id) => String(id)))];
+  for (const id of ids) memberships.set(id, []);
+  if (ids.length === 0) return memberships;
+
   const database = getWritableDb();
+  const placeholders = ids.map(() => "?").join(",");
   const rows = database
     .prepare(
-      `SELECT c.slug, c.name, c.color
+      `SELECT bc.bookmark_id, c.slug, c.name, c.color
        FROM bookmark_collections bc
        JOIN collections c ON c.id = bc.collection_id
-       WHERE bc.bookmark_id = ?
+       WHERE bc.bookmark_id IN (${placeholders})
        ORDER BY LOWER(c.name) ASC`,
     )
-    .all(bookmarkId) as RawRow[];
+    .all(...ids) as RawRow[];
 
-  return rows.map((r) => ({
-    slug: r.slug as string,
-    name: r.name as string,
-    color: (r.color as string) || "",
+  for (const row of rows) {
+    const id = String(row.bookmark_id);
+    const list = memberships.get(id) ?? [];
+    list.push({
+      slug: row.slug as string,
+      name: row.name as string,
+      color: (row.color as string) || "",
+    });
+    memberships.set(id, list);
+  }
+
+  return memberships;
+}
+
+export function attachCollections<T extends { id: string | number }>(
+  bookmarks: T[],
+): Array<T & { collections: CollectionMembership[] }> {
+  const memberships = getCollectionsForBookmarks(bookmarks.map((bookmark) => String(bookmark.id)));
+  return bookmarks.map((bookmark) => ({
+    ...bookmark,
+    collections: memberships.get(String(bookmark.id)) ?? [],
   }));
 }

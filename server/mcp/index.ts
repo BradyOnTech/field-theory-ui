@@ -93,14 +93,17 @@ export function createFieldTheoryMcpServer(options: FieldTheoryMcpOptions = {}):
     title: "Search bookmarks",
     description:
       "Full-text search across bookmarked posts. Returns compact bookmarks with id, author, text, categories, domains. " +
-      "Filter by author handle, category slug, domain slug, collection slug, or date range (ISO 8601). " +
+      "Filter by author handle, category slug, domain slug, collection slug, uncollected bookmarks (__none__), or date range (ISO 8601). " +
       "Use this as the primary discovery tool. Default limit 20, max 100.",
     inputSchema: {
       query: z.string().optional().describe("Full-text search query"),
       author: z.string().optional().describe("Filter by author handle (without @)"),
       category: z.string().optional().describe("Filter by category slug (e.g. 'technique')"),
       domain: z.string().optional().describe("Filter by domain slug (e.g. 'ai')"),
-      collection: z.string().optional().describe("Filter by collection slug"),
+      collection: z
+        .string()
+        .optional()
+        .describe("Filter by collection slug, or '__none__' for bookmarks not in any collection"),
       after: z.string().optional().describe("ISO date: only bookmarks posted on/after"),
       before: z.string().optional().describe("ISO date: only bookmarks posted on/before"),
       sort: z

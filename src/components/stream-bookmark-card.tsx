@@ -96,13 +96,15 @@ export function BookmarkCard({
   const isDetail = isExpanded;
 
   useEffect(() => {
-    if (!isPickerOpen && !isDetail) return;
-    if (bookmark.collections) return;
+    if (bookmark.collections !== undefined) {
+      setMemberships(bookmark.collections);
+      return;
+    }
     let cancelled = false;
-    void fetchBookmark(bookmarkIdStr)
+    void Promise.resolve(fetchBookmark(bookmarkIdStr))
       .then((detail) => {
-        if (cancelled) return;
-        if (detail.collections) setMemberships(detail.collections);
+        if (cancelled || !detail?.collections) return;
+        setMemberships(detail.collections);
       })
       .catch(() => {
         /* non-fatal; picker still works */
@@ -110,7 +112,7 @@ export function BookmarkCard({
     return () => {
       cancelled = true;
     };
-  }, [isPickerOpen, isDetail, bookmark.collections, bookmarkIdStr]);
+  }, [bookmark.collections, bookmarkIdStr]);
 
   const date = parseTwitterDate(bookmark.posted_at);
   const relativeTime = date ? timeAgo(date) : "";

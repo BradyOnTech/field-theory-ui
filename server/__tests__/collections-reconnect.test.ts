@@ -45,4 +45,19 @@ describe("collections writable DB reconnection", () => {
       { slug: collection.slug, name: collection.name, color: "" },
     ]);
   });
+
+  it("attaches persisted memberships to list results after reload", async () => {
+    const queries = await import("../queries");
+    const collection = queries.createCollection({ name: "Game Dev" });
+    expect(queries.addBookmarksToCollection(collection.slug, ["42"])).toEqual({
+      added: 1,
+      skipped: 0,
+    });
+
+    const attached = queries.attachCollections([{ id: "42" }, { id: "99" }]);
+    expect(attached[0]?.collections).toEqual([
+      { slug: collection.slug, name: "Game Dev", color: "" },
+    ]);
+    expect(attached[1]?.collections).toEqual([]);
+  });
 });
