@@ -24,6 +24,8 @@
     "typecheck": "tsc --noEmit",
     "server": "tsx server/index.ts",
     "mcp": "tsx server/mcp/index.ts",
+    "service:install": "./scripts/install-macos-service.sh",
+    "service:uninstall": "./scripts/uninstall-macos-service.sh",
     "start": "npm run build && npm run server",
     "preview": "vite preview",
     "test": "vitest run",

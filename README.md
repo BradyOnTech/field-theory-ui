@@ -1,6 +1,6 @@
 # Field Theory UI
 
-Local-first web interface for exploring your X/Twitter bookmarks. Built on the [fieldtheory CLI](https://github.com/afar1/fieldtheory-cli).
+Local-first web interface for exploring your X/Twitter bookmarks. Built on the [fieldtheory CLI](https://github.com/afar1/fieldtheory-cli). It can run as a private, always-on Mac service for web and agent access.
 
 **Read-only** · **Zero cloud** · **Dark mode**
 
@@ -23,7 +23,33 @@ npm install
 ./start.sh
 ```
 
-Open [http://localhost:3939](http://localhost:3939). The start script builds, launches, and prints a QR code for mobile access on your local network.
+Open [http://localhost:3939](http://localhost:3939). The start script builds and launches the app; it prints a LAN URL and QR code only when `HOST=0.0.0.0` is explicitly set.
+
+The server binds to `127.0.0.1` by default. Set `HOST=0.0.0.0` only when you intentionally want direct LAN access; Tailscale Serve is the recommended remote-access layer.
+
+## Always-on Mac hosting
+
+1. Install and sync the current CLI:
+
+```sh
+npm install -g fieldtheory
+ft sync
+```
+
+2. Copy `.env.example` to `.env`, set `FT_DATA_DIR` to `~/.fieldtheory/bookmarks`, and generate `MCP_BEARER_TOKEN` with `openssl rand -hex 32`.
+3. Install the launchd server and hourly sync jobs:
+
+```sh
+npm run service:install
+```
+
+4. After installing and signing into Tailscale, publish the loopback service privately:
+
+```sh
+tailscale serve --bg http://127.0.0.1:3939
+```
+
+The installer deploys a runtime copy to `~/.local/share/field-theory-ui` so macOS background-job privacy rules do not block projects stored under `Documents`. The UI service starts at login and restarts if it exits. The sync job runs metadata-only `ft sync --no-media` hourly and keeps a current SQLite/JSONL backup under `~/.fieldtheory/backups`. Re-run the install command after changing the repo; remove the jobs without deleting data using `npm run service:uninstall`.
 
 ## Views
 
@@ -102,7 +128,7 @@ npm run generate:prompt  # Regenerate OpenUI component reference for Chat Pro
 
 ## MCP Server
 
-Field Theory exposes your local bookmarks as an MCP server so external agents (Claude Desktop, Claude Code, Cursor, …) can search, read, and organise them into Collections. The server runs over stdio and reads/writes the same `~/.ft-bookmarks/bookmarks.db` that the UI uses.
+Field Theory exposes your bookmarks as an MCP server so external agents (Codex, Claude Code, Claude Desktop, Cursor, …) can search, read, and organise them into Collections. The local stdio transport includes collection writes. The bearer-protected Streamable HTTP endpoint at `/mcp` is read-only and uses the same `~/.fieldtheory/bookmarks/bookmarks.db`.
 
 **Tools:**
 
@@ -144,13 +170,28 @@ Field Theory exposes your local bookmarks as an MCP server so external agents (C
 
 After configuring, ask your agent things like *"search my bookmarks for LangChain + web search tools"* or *"add the last 10 AI-news bookmarks to a collection called Weekly Digest"* and it'll call these tools directly.
 
+**Remote HTTP MCP config** (Codex `~/.codex/config.toml`):
+
+```toml
+[mcp_servers.field_theory_remote]
+url = "https://your-mac.your-tailnet.ts.net/mcp"
+bearer_token_env_var = "FIELD_THEORY_TOKEN"
+enabled_tools = ["search_bookmarks", "get_bookmark", "get_conversation", "stats", "list_categories", "list_domains", "list_collections", "get_bookmarks_by_collection"]
+```
+
+Each MCP bookmark result includes the original X URL plus stable `archive_url` and `json_url` values when `PUBLIC_BASE_URL` is configured or the request supplies a public host.
+
 ## Environment Variables
 
 
 | Variable            | Default           | Description                                         |
 | ------------------- | ----------------- | --------------------------------------------------- |
 | `PORT`              | `3939`            | Server port                                         |
-| `FT_DATA_DIR`       | `~/.ft-bookmarks` | Directory containing `bookmarks.db`                 |
+| `HOST`              | `127.0.0.1`        | Bind address; keep loopback when using Tailscale    |
+| `FT_DATA_DIR`       | `~/.fieldtheory/bookmarks` | Directory containing `bookmarks.db`          |
+| `PUBLIC_BASE_URL`   | --                 | Stable HTTPS origin included in agent results       |
+| `MCP_BEARER_TOKEN`  | --                 | Enables authenticated read-only HTTP MCP at `/mcp`  |
+| `CORS_ORIGIN`       | --                 | Optional single trusted cross-origin web origin     |
 | `ANTHROPIC_API_KEY` | --                | Enables Chat Pro with Claude                        |
 | `OPENAI_API_KEY`    | --                | Enables Chat Pro with GPT                           |
 | `TAVILY_API_KEY`    | --                | Enables web search in Chat Pro ([Tavily](https://tavily.com)) |
@@ -187,7 +228,7 @@ ft sync --gaps
 <details>
 <summary><strong>API Endpoints</strong></summary>
 
-All endpoints return JSON and include CORS headers. Each request opens a fresh database connection so data is always current after syncing.
+All endpoints return JSON. Cross-origin browser access is disabled unless `CORS_ORIGIN` is set. Each request opens a fresh database connection so data is always current after syncing.
 
 | Endpoint                                                                 | Description                                   |
 | ------------------------------------------------------------------------ | --------------------------------------------- |

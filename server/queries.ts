@@ -93,7 +93,7 @@ function parseTwitterDateToYMD(dateStr: string | null): string | null {
 }
 
 // Database connection
-const dbDir = process.env.FT_DATA_DIR || path.join(os.homedir(), ".ft-bookmarks");
+const dbDir = process.env.FT_DATA_DIR || path.join(os.homedir(), ".fieldtheory", "bookmarks");
 const dbPath = path.join(dbDir, "bookmarks.db");
 
 let schemaValidated = false;

@@ -6,7 +6,8 @@ cd "$(dirname "$0")"
 
 # Use PORT env var or default to 3939
 PORT="${PORT:-3939}"
-export PORT
+HOST="${HOST:-127.0.0.1}"
+export PORT HOST
 
 # Step 1: Build if dist/ doesn't exist
 if [ ! -d "dist" ]; then
@@ -43,7 +44,7 @@ LOCAL_URL="http://localhost:${PORT}"
 LAN_URL="http://${LAN_IP}:${PORT}"
 
 # Step 3: Start the server in background
-PORT="$PORT" npx tsx server/index.ts &
+PORT="$PORT" HOST="$HOST" npx tsx server/index.ts &
 SERVER_PID=$!
 
 # Wait for server to be ready
@@ -71,24 +72,30 @@ printf "  │                                         │\n"
 printf "  │   Field Theory UI                       │\n"
 printf "  │                                         │\n"
 printf "  │   Local:   %-27s│\n" "$LOCAL_URL"
-printf "  │   Network: %-27s│\n" "$LAN_URL"
+if [ "$HOST" = "0.0.0.0" ] || [ "$HOST" = "::" ]; then
+  printf "  │   Network: %-27s│\n" "$LAN_URL"
+else
+  printf "  │   Access:  %-27s│\n" "loopback only"
+fi
 printf "  │                                         │\n"
 printf "  └─────────────────────────────────────────┘\n"
 echo ""
 
-# Step 5: Generate QR code for LAN URL
-LAN_URL="$LAN_URL" node -e "
-  const qr = require('qrcode-terminal');
-  const url = process.env.LAN_URL;
-  qr.generate(url, { small: true }, function(code) {
-    console.log('  Scan to open on your device:\n');
-    const lines = code.split('\n');
-    for (const line of lines) {
-      console.log('  ' + line);
-    }
-    console.log('');
-  });
-"
+# Step 5: Generate a QR code only when LAN binding is explicitly enabled.
+if [ "$HOST" = "0.0.0.0" ] || [ "$HOST" = "::" ]; then
+  LAN_URL="$LAN_URL" node -e "
+    const qr = require('qrcode-terminal');
+    const url = process.env.LAN_URL;
+    qr.generate(url, { small: true }, function(code) {
+      console.log('  Scan to open on your device:\n');
+      const lines = code.split('\n');
+      for (const line of lines) {
+        console.log('  ' + line);
+      }
+      console.log('');
+    });
+  "
+fi
 
 # Keep the server running in foreground
 echo "  Press Ctrl+C to stop the server."

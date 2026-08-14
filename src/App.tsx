@@ -8,6 +8,7 @@ import { ChronosView } from "@/views/chronos";
 import { ForgeView } from "@/views/forge";
 import { MirrorView } from "@/views/mirror";
 import { CollectionsView } from "@/views/collections";
+import { BookmarkDetailView } from "@/views/bookmark-detail";
 
 
 export function App() {
@@ -24,6 +25,7 @@ export function App() {
         <Route path="/mirror" element={<MirrorView />} />
         <Route path="/collections" element={<CollectionsView />} />
         <Route path="/collections/:slug" element={<CollectionsView />} />
+        <Route path="/bookmarks/:id" element={<BookmarkDetailView />} />
 
       </Route>
     </Routes>

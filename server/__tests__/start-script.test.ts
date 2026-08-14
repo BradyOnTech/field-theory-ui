@@ -34,6 +34,12 @@ describe("start.sh launch script", () => {
     expect(content).toContain('PORT="${PORT:-3939}"');
   });
 
+  it("binds to loopback unless LAN access is explicitly enabled", () => {
+    const content = readFileSync(SCRIPT_PATH, "utf-8");
+    expect(content).toContain('HOST="${HOST:-127.0.0.1}"');
+    expect(content).toContain('HOST="$HOST" npx tsx server/index.ts');
+  });
+
   it("starts the server with tsx", () => {
     const content = readFileSync(SCRIPT_PATH, "utf-8");
     expect(content).toContain("npx tsx server/index.ts");
@@ -45,11 +51,12 @@ describe("start.sh launch script", () => {
     expect(content).toContain("http://localhost");
   });
 
-  it("detects LAN IP and prints LAN URL", () => {
+  it("retains opt-in LAN IP and QR support", () => {
     const content = readFileSync(SCRIPT_PATH, "utf-8");
     expect(content).toContain("LAN_IP");
     expect(content).toContain("LAN_URL");
     expect(content).toContain("networkInterfaces");
+    expect(content).toContain('if [ "$HOST" = "0.0.0.0" ]');
   });
 
   it("generates QR code using qrcode-terminal", () => {

@@ -2,7 +2,7 @@
 /**
  * Field Theory MCP server.
  *
- * Exposes your local bookmarks DB (~/.ft-bookmarks/bookmarks.db) to any MCP
+ * Exposes your local bookmarks DB to any MCP
  * client (Claude Desktop, Claude Code, Cursor, …) as a set of read + write
  * tools. All state lives in the same SQLite file that ft sync writes and the
  * UI reads — this server just reuses the query helpers in ../queries.ts.
@@ -31,20 +31,25 @@ import {
   getCollectionsForBookmark,
 } from "../queries";
 
-const server = new McpServer({
-  name: "field-theory",
-  version: "0.1.0",
-});
+export interface FieldTheoryMcpOptions {
+  /** Public origin used to generate stable human and JSON bookmark links. */
+  baseUrl?: string;
+  /** Remote transports should default to read-only tools. */
+  readOnly?: boolean;
+}
 
 /**
  * Strip heavy fields an agent rarely needs so we don't blow the context window.
  * article_text, quoted_tweet_json, links_json can each be several KB.
  */
-function compactBookmark(b: ReturnType<typeof getBookmarkById>) {
+function compactBookmark(b: ReturnType<typeof getBookmarkById>, baseUrl?: string) {
   if (!b) return null;
+  const normalizedBaseUrl = baseUrl?.replace(/\/$/, "");
   return {
     id: b.id,
     url: b.url,
+    archive_url: normalizedBaseUrl ? `${normalizedBaseUrl}/bookmarks/${encodeURIComponent(b.id)}` : undefined,
+    json_url: normalizedBaseUrl ? `${normalizedBaseUrl}/api/bookmark/${encodeURIComponent(b.id)}` : undefined,
     text: b.text,
     author_handle: b.author_handle,
     author_name: b.author_name,
@@ -65,9 +70,24 @@ function asJsonText(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
 }
 
-// --- Read tools ---
+export function createFieldTheoryMcpServer(options: FieldTheoryMcpOptions = {}): McpServer {
+  const { baseUrl, readOnly = false } = options;
+  const server = new McpServer(
+    {
+      name: "field-theory",
+      version: "0.2.0",
+    },
+    {
+      instructions:
+        "Search the bookmark archive before answering questions that may relate to the user's saved X posts. " +
+        "Use search_bookmarks for discovery, get_bookmark for detail, and return archive_url links when available. " +
+        (readOnly ? "This connection is read-only." : "Collection tools may change local collection membership."),
+    },
+  );
 
-server.registerTool(
+  // --- Read tools ---
+
+  server.registerTool(
   "search_bookmarks",
   {
     title: "Search bookmarks",
@@ -115,12 +135,12 @@ server.registerTool(
       total: result.total,
       offset: args.offset,
       returned: result.results.length,
-      results: result.results.map(compactBookmark),
+      results: result.results.map((bookmark) => compactBookmark(bookmark, baseUrl)),
     });
   },
 );
 
-server.registerTool(
+  server.registerTool(
   "get_bookmark",
   {
     title: "Get a bookmark by id",
@@ -134,11 +154,11 @@ server.registerTool(
     const bookmark = getBookmarkById(id);
     if (!bookmark) return asJsonText({ error: "not_found", id });
     const collections = getCollectionsForBookmark(id);
-    return asJsonText({ ...compactBookmark(bookmark), collections });
+    return asJsonText({ ...compactBookmark(bookmark, baseUrl), collections });
   },
 );
 
-server.registerTool(
+  server.registerTool(
   "get_conversation",
   {
     title: "Get a conversation thread",
@@ -151,11 +171,14 @@ server.registerTool(
   },
   async ({ conversation_id }) => {
     const rows = getBookmarksByConversation(conversation_id);
-    return asJsonText({ count: rows.length, results: rows.map(compactBookmark) });
+    return asJsonText({
+      count: rows.length,
+      results: rows.map((bookmark) => compactBookmark(bookmark, baseUrl)),
+    });
   },
 );
 
-server.registerTool(
+  server.registerTool(
   "stats",
   {
     title: "Library stats",
@@ -166,7 +189,7 @@ server.registerTool(
   async () => asJsonText(getStats()),
 );
 
-server.registerTool(
+  server.registerTool(
   "list_categories",
   {
     title: "List categories",
@@ -179,7 +202,7 @@ server.registerTool(
   async () => asJsonText(getCategories()),
 );
 
-server.registerTool(
+  server.registerTool(
   "list_domains",
   {
     title: "List domains",
@@ -191,9 +214,9 @@ server.registerTool(
   async () => asJsonText(getDomains()),
 );
 
-// --- Collections tools ---
+  // --- Collections tools ---
 
-server.registerTool(
+  server.registerTool(
   "list_collections",
   {
     title: "List collections",
@@ -205,7 +228,7 @@ server.registerTool(
   async () => asJsonText(listCollections()),
 );
 
-server.registerTool(
+  server.registerTool(
   "get_bookmarks_by_collection",
   {
     title: "Get bookmarks in a collection",
@@ -223,91 +246,96 @@ server.registerTool(
       total: result.total,
       offset,
       returned: result.results.length,
-      results: result.results.map(compactBookmark),
+      results: result.results.map((bookmark) => compactBookmark(bookmark, baseUrl)),
     });
   },
 );
 
-server.registerTool(
-  "create_collection",
-  {
-    title: "Create a collection",
-    description:
-      "Create a new collection for grouping bookmarks across categories/domains. " +
-      "Returns the created collection including its slug (auto-generated from the name).",
-    inputSchema: {
-      name: z.string().min(1).describe("Human-readable name"),
-      description: z.string().optional(),
-      color: z.string().optional().describe("Hex color like '#7c3aed' for UI chips"),
-    },
-  },
-  async ({ name, description, color }) => {
-    try {
-      const created = createCollection({ name, description, color });
-      return asJsonText(created);
-    } catch (err) {
-      return asJsonText({ error: (err as Error).message });
-    }
-  },
-);
+  if (!readOnly) {
+    server.registerTool(
+      "create_collection",
+      {
+        title: "Create a collection",
+        description:
+          "Create a new collection for grouping bookmarks across categories/domains. " +
+          "Returns the created collection including its slug (auto-generated from the name).",
+        inputSchema: {
+          name: z.string().min(1).describe("Human-readable name"),
+          description: z.string().optional(),
+          color: z.string().optional().describe("Hex color like '#7c3aed' for UI chips"),
+        },
+      },
+      async ({ name, description, color }) => {
+        try {
+          const created = createCollection({ name, description, color });
+          return asJsonText(created);
+        } catch (err) {
+          return asJsonText({ error: (err as Error).message });
+        }
+      },
+    );
 
-server.registerTool(
-  "delete_collection",
-  {
-    title: "Delete a collection",
-    description:
-      "Permanently delete a collection and all its bookmark memberships. Bookmarks themselves are not affected.",
-    inputSchema: {
-      slug: z.string(),
-    },
-  },
-  async ({ slug }) => {
-    const ok = deleteCollection(slug);
-    return asJsonText({ deleted: ok, slug });
-  },
-);
+    server.registerTool(
+      "delete_collection",
+      {
+        title: "Delete a collection",
+        description:
+          "Permanently delete a collection and all its bookmark memberships. Bookmarks themselves are not affected.",
+        inputSchema: {
+          slug: z.string(),
+        },
+      },
+      async ({ slug }) => {
+        const ok = deleteCollection(slug);
+        return asJsonText({ deleted: ok, slug });
+      },
+    );
 
-server.registerTool(
-  "add_to_collection",
-  {
-    title: "Add bookmarks to a collection",
-    description:
-      "Add one or more bookmarks (by id) to a collection. Idempotent — already-present bookmarks are skipped. " +
-      "Writes are tagged added_by='mcp' so agent additions can be audited later.",
-    inputSchema: {
-      slug: z.string().describe("Collection slug"),
-      bookmark_ids: z.array(z.string()).min(1).describe("One or more bookmark ids"),
-    },
-  },
-  async ({ slug, bookmark_ids }) => {
-    try {
-      const result = addBookmarksToCollection(slug, bookmark_ids, "mcp");
-      return asJsonText({ slug, ...result });
-    } catch (err) {
-      return asJsonText({ error: (err as Error).message });
-    }
-  },
-);
+    server.registerTool(
+      "add_to_collection",
+      {
+        title: "Add bookmarks to a collection",
+        description:
+          "Add one or more bookmarks (by id) to a collection. Idempotent — already-present bookmarks are skipped. " +
+          "Writes are tagged added_by='mcp' so agent additions can be audited later.",
+        inputSchema: {
+          slug: z.string().describe("Collection slug"),
+          bookmark_ids: z.array(z.string()).min(1).describe("One or more bookmark ids"),
+        },
+      },
+      async ({ slug, bookmark_ids }) => {
+        try {
+          const result = addBookmarksToCollection(slug, bookmark_ids, "mcp");
+          return asJsonText({ slug, ...result });
+        } catch (err) {
+          return asJsonText({ error: (err as Error).message });
+        }
+      },
+    );
 
-server.registerTool(
-  "remove_from_collection",
-  {
-    title: "Remove bookmarks from a collection",
-    description: "Remove one or more bookmarks (by id) from a collection. Bookmarks themselves are not deleted.",
-    inputSchema: {
-      slug: z.string(),
-      bookmark_ids: z.array(z.string()).min(1),
-    },
-  },
-  async ({ slug, bookmark_ids }) => {
-    try {
-      const result = removeBookmarksFromCollection(slug, bookmark_ids);
-      return asJsonText({ slug, ...result });
-    } catch (err) {
-      return asJsonText({ error: (err as Error).message });
-    }
-  },
-);
+    server.registerTool(
+      "remove_from_collection",
+      {
+        title: "Remove bookmarks from a collection",
+        description: "Remove one or more bookmarks (by id) from a collection. Bookmarks themselves are not deleted.",
+        inputSchema: {
+          slug: z.string(),
+          bookmark_ids: z.array(z.string()).min(1),
+        },
+      },
+      async ({ slug, bookmark_ids }) => {
+        try {
+          const result = removeBookmarksFromCollection(slug, bookmark_ids);
+          return asJsonText({ slug, ...result });
+        } catch (err) {
+          return asJsonText({ error: (err as Error).message });
+        }
+      },
+    );
+  }
+
+  return server;
+}
 
 // --- Entry point ---
 
@@ -322,11 +350,17 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const server = createFieldTheoryMcpServer({ baseUrl: process.env.PUBLIC_BASE_URL });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
 
-main().catch((err: unknown) => {
-  process.stderr.write(`field-theory MCP fatal: ${(err as Error).message}\n`);
-  process.exit(1);
-});
+const isMainModule = process.argv[1]?.endsWith("server/mcp/index.ts") ||
+  process.argv[1]?.endsWith("server/mcp/index.js");
+
+if (isMainModule) {
+  main().catch((err: unknown) => {
+    process.stderr.write(`field-theory MCP fatal: ${(err as Error).message}\n`);
+    process.exit(1);
+  });
+}

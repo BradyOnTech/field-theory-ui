@@ -2,9 +2,11 @@ import "dotenv/config";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { readFileSync, existsSync, statSync } from "fs";
 import { spawn, type ChildProcess } from "child_process";
+import { timingSafeEqual } from "crypto";
 import { fileURLToPath } from "url";
 import path from "path";
 import os from "os";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   getDb,
   getWritableDb,
@@ -37,8 +39,10 @@ import {
 } from "./queries";
 import { handleOracleQuery, type OracleContext } from "./oracle";
 import { handleOracleProQueryStream, isProModeAvailable, isWebSearchAvailable } from "./oracle-pro";
+import { createFieldTheoryMcpServer } from "./mcp/index";
 
 const PORT = parseInt(process.env.PORT || "3939", 10);
+const HOST = process.env.HOST || "127.0.0.1";
 const __dirname = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
 const DIST_DIR = path.resolve(__dirname, "..", "dist");
 
@@ -124,11 +128,12 @@ function startSync(): { status: string } {
   return { status: "started" };
 }
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
+const CORS_ORIGIN = process.env.CORS_ORIGIN?.trim();
+const CORS_HEADERS: Record<string, string> = {
+  ...(CORS_ORIGIN ? { "Access-Control-Allow-Origin": CORS_ORIGIN } : {}),
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-} as const;
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
 
 function sendJSON(res: ServerResponse, data: unknown, status = 200): void {
   res.writeHead(status, {
@@ -189,6 +194,72 @@ function getPathname(urlStr: string): string {
   return qIndex === -1 ? urlStr : urlStr.slice(0, qIndex);
 }
 
+function requestBaseUrl(req: IncomingMessage): string {
+  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/$/, "");
+  const forwardedProto = req.headers["x-forwarded-proto"];
+  const proto = Array.isArray(forwardedProto)
+    ? forwardedProto[0]
+    : forwardedProto?.split(",")[0]?.trim() || "http";
+  const forwardedHost = req.headers["x-forwarded-host"];
+  const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) || req.headers.host;
+  return host ? `${proto}://${host}` : `http://127.0.0.1:${PORT}`;
+}
+
+function hasValidMcpToken(req: IncomingMessage): boolean {
+  const configuredToken = process.env.MCP_BEARER_TOKEN?.trim() || "";
+  if (!configuredToken) return false;
+  const authorization = req.headers.authorization;
+  if (!authorization?.startsWith("Bearer ")) return false;
+  const supplied = Buffer.from(authorization.slice("Bearer ".length), "utf8");
+  const expected = Buffer.from(configuredToken, "utf8");
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+}
+
+async function handleMcpHttpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!process.env.MCP_BEARER_TOKEN?.trim()) {
+    sendError(res, "Remote MCP is disabled until MCP_BEARER_TOKEN is configured", 503);
+    return;
+  }
+  if (!hasValidMcpToken(req)) {
+    res.setHeader("WWW-Authenticate", 'Bearer realm="field-theory"');
+    sendError(res, "Unauthorized", 401);
+    return;
+  }
+  if (req.method !== "POST") {
+    sendJSON(
+      res,
+      { jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed" }, id: null },
+      405,
+    );
+    return;
+  }
+
+  let mcpServer: ReturnType<typeof createFieldTheoryMcpServer> | undefined;
+  let transport: StreamableHTTPServerTransport | undefined;
+  try {
+    const body = await readJsonBody<unknown>(req);
+    mcpServer = createFieldTheoryMcpServer({
+      baseUrl: requestBaseUrl(req),
+      readOnly: true,
+    });
+    transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    await mcpServer.connect(transport);
+    await transport.handleRequest(req, res, body);
+  } catch (err) {
+    console.error("MCP HTTP error:", err);
+    if (!res.headersSent) {
+      sendJSON(
+        res,
+        { jsonrpc: "2.0", error: { code: -32603, message: "Internal server error" }, id: null },
+        500,
+      );
+    }
+  } finally {
+    await transport?.close().catch(() => undefined);
+    await mcpServer?.close().catch(() => undefined);
+  }
+}
+
 /**
  * Parse a numeric query parameter. Returns the parsed integer if valid and finite,
  * or the defaultValue if the parameter is absent or invalid.
@@ -238,6 +309,11 @@ export function handleRequest(req: IncomingMessage, res: ServerResponse): void {
   if (req.method === "OPTIONS") {
     res.writeHead(204, CORS_HEADERS);
     res.end();
+    return;
+  }
+
+  if (pathname === "/mcp") {
+    void handleMcpHttpRequest(req, res);
     return;
   }
 
@@ -746,10 +822,12 @@ if (isMainModule) {
 
   const server = createServer(handleRequest);
 
-  server.listen(PORT, () => {
-    const localIP = getLocalIP();
+  server.listen(PORT, HOST, () => {
     console.log(`\n  Field Theory API server running:\n`);
-    console.log(`  Local:   http://localhost:${PORT}`);
-    console.log(`  Network: http://${localIP}:${PORT}\n`);
+    console.log(`  Local: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`);
+    if (HOST === "0.0.0.0" || HOST === "::") {
+      console.log(`  Network: http://${getLocalIP()}:${PORT}`);
+    }
+    console.log("");
   });
 }
